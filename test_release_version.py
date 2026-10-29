@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 
 import version
@@ -16,18 +21,48 @@ class ReleaseVersionContractTests(unittest.TestCase):
         self.assertTrue(notes.is_file(), notes)
         self.assertEqual(f"# yzip {version.__version__}", notes.read_text(encoding="utf-8").splitlines()[0])
 
-    def test_build_installer_and_workflow_derive_version_from_version_py(self):
-        build = (ROOT / "build.ps1").read_text(encoding="utf-8")
-        installer = (ROOT / "installer" / "yzip.iss").read_text(encoding="utf-8")
-        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    def test_make_version_files_executes_from_version_py_into_temp_outputs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = pathlib.Path(folder)
+            shutil.copy2(ROOT / "make_version_files.py", root)
+            shutil.copy2(ROOT / "version_contract.py", root)
+            (root / "version.py").write_text('__version__ = "9.8.7"\n', encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, "make_version_files.py"], cwd=root, capture_output=True, text=True,
+                encoding="utf-8", check=True,
+            )
+            exe_resource = (root / "build" / "version_info.txt").read_text(encoding="utf-8")
+            shell_resource = (root / "shell" / "build" / "version.h").read_text(encoding="ascii")
 
-        self.assertIn("$version = (python make_version_files.py).Trim()", build)
-        self.assertIn('"/DAppVersion=$version"', build)
-        self.assertIn("yzip-setup-$version.exe", build)
-        self.assertIn("AppVersion={#AppVersion}", installer)
-        self.assertIn("OutputBaseFilename=yzip-setup-{#AppVersion}", installer)
-        self.assertIn("version.__version__ == '${{ github.ref_name }}'.lstrip('v')", workflow)
-        self.assertIn('$notes = ".github\\release-notes-$v.md"', workflow)
+        self.assertEqual("9.8.7", result.stdout.strip())
+        self.assertIn("filevers=(9, 8, 7, 0)", exe_resource)
+        self.assertIn("prodvers=(9, 8, 7, 0)", exe_resource)
+        self.assertIn("StringStruct('FileVersion', '9.8.7')", exe_resource)
+        self.assertIn("StringStruct('ProductVersion', '9.8.7')", exe_resource)
+        self.assertEqual('#define YZ_VER 9,8,7,0\n#define YZ_VER_STR "9.8.7"\n', shell_resource)
+
+    def test_installer_contract_expands_app_version_and_output_filename(self):
+        from version_contract import installer_setup_contract
+
+        contract = installer_setup_contract(ROOT / "installer" / "yzip.iss", version.__version__)
+        self.assertEqual(version.__version__, contract["AppVersion"])
+        self.assertEqual(f"yzip {version.__version__}", contract["AppVerName"])
+        self.assertEqual(version.__version__, contract["VersionInfoVersion"])
+        self.assertEqual(version.__version__, contract["VersionInfoProductVersion"])
+        self.assertEqual(f"yzip-setup-{version.__version__}", contract["OutputBaseFilename"])
+
+    def test_release_workflow_runs_version_contract_suite(self):
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        tests_step = re.search(r"(?ms)^      - name: Tests\s+.*?^      - name:", workflow)
+        self.assertIsNotNone(tests_step)
+        modules = re.findall(r"\btest_[a-z0-9_]+\b", tests_step.group(0))
+        self.assertIn("test_release_version", modules)
+
+    def test_built_installer_filename_matches_version_when_present(self):
+        installers = sorted((ROOT / "dist").glob("yzip-setup-*.exe")) if (ROOT / "dist").is_dir() else []
+        if not installers:
+            self.skipTest("built installer is not present")
+        self.assertIn(ROOT / "dist" / f"yzip-setup-{version.__version__}.exe", installers)
 
 
 if __name__ == "__main__":
