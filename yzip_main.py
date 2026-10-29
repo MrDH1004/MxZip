@@ -9,16 +9,6 @@ def main() -> int:
     settings = appcore.apply_runtime_settings(strict=False)
     args = sys.argv[1:]
     job = None
-    if args[:1] == ["--archive"] and len(args) > 1:
-        paths = appcore.gather_shell_paths("archive", args[1:])
-        if paths is None:
-            return 0
-        try:
-            appcore.shell_archive(paths)
-        except Exception as exc:
-            appcore.log_exception(exc)
-            return 1
-        return 0
     if args[:1] == ["--archive-list"] and len(args) >= 4 and args[2] == "--out":
         # Keep the selection available for elevation or GUI fallback.
         with open(args[1], encoding="utf-8") as selection:
