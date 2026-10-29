@@ -296,6 +296,120 @@ class BenchmarkNativeTests(unittest.TestCase):
             self.assertEqual(b"existing evidence", output.read_bytes())
             self.assertIn("failed to write benchmark raw output", stderr.getvalue())
 
+    def test_summary_publish_failure_restores_existing_pair_across_directories(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            raw_dir = root / "raw"
+            summary_dir = root / "summary"
+            raw_dir.mkdir()
+            summary_dir.mkdir()
+            baseline = root / "baseline.json"
+            output = raw_dir / "result.json"
+            summary = summary_dir / "summary.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            output.write_bytes(b"old raw evidence")
+            summary.write_bytes(b"old summary evidence")
+            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            real_replace = benchmark.os.replace
+            failed = False
+
+            def fail_summary_publish(source, destination):
+                nonlocal failed
+                source_path = Path(source)
+                if not failed and destination == summary and source_path.suffix == ".tmp":
+                    failed = True
+                    raise PermissionError("summary replace denied")
+                return real_replace(source, destination)
+
+            with mock.patch.object(
+                benchmark, "_execute_matrix", return_value=(results, 1.0)
+            ), mock.patch.object(
+                benchmark.os, "replace", side_effect=fail_summary_publish
+            ), mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                code = benchmark.cli([
+                    "--output", str(output), "--summary", str(summary),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertEqual(1, code)
+            self.assertEqual(b"old raw evidence", output.read_bytes())
+            self.assertEqual(b"old summary evidence", summary.read_bytes())
+            self.assertIn("failed to publish benchmark evidence pair", stderr.getvalue())
+            self.assertEqual([], list(root.rglob("*.tmp")))
+            self.assertEqual([], list(root.rglob("*.bak")))
+
+    def test_summary_publish_failure_removes_new_pair_and_transaction_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "baseline.json"
+            output = root / "result.json"
+            summary = root / "summary.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            real_replace = benchmark.os.replace
+            failed = False
+
+            def fail_summary_publish(source, destination):
+                nonlocal failed
+                source_path = Path(source)
+                if not failed and destination == summary and source_path.suffix == ".tmp":
+                    failed = True
+                    raise PermissionError("summary replace denied")
+                return real_replace(source, destination)
+
+            with mock.patch.object(
+                benchmark, "_execute_matrix", return_value=(results, 1.0)
+            ), mock.patch.object(
+                benchmark.os, "replace", side_effect=fail_summary_publish
+            ):
+                code = benchmark.cli([
+                    "--output", str(output), "--summary", str(summary),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertEqual(1, code)
+            self.assertFalse(output.exists())
+            self.assertFalse(summary.exists())
+            self.assertEqual([], list(root.rglob("*.tmp")))
+            self.assertEqual([], list(root.rglob("*.bak")))
+
+    def test_rollback_failure_is_reported_and_retains_unrestored_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "baseline.json"
+            output = root / "result.json"
+            summary = root / "summary.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            output.write_bytes(b"old raw evidence")
+            summary.write_bytes(b"old summary evidence")
+            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            real_replace = benchmark.os.replace
+            summary_failed = False
+
+            def fail_publish_and_raw_restore(source, destination):
+                nonlocal summary_failed
+                source_path = Path(source)
+                if not summary_failed and destination == summary and source_path.suffix == ".tmp":
+                    summary_failed = True
+                    raise PermissionError("summary replace denied")
+                if summary_failed and destination == output and source_path.suffix == ".bak":
+                    raise PermissionError("raw restore denied")
+                return real_replace(source, destination)
+
+            with mock.patch.object(
+                benchmark, "_execute_matrix", return_value=(results, 1.0)
+            ), mock.patch.object(
+                benchmark.os, "replace", side_effect=fail_publish_and_raw_restore
+            ), mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                code = benchmark.cli([
+                    "--output", str(output), "--summary", str(summary),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertEqual(1, code)
+            self.assertIn("rollback failed", stderr.getvalue())
+            backups = list(root.rglob("*.bak"))
+            self.assertEqual(1, len(backups))
+            self.assertEqual(b"old raw evidence", backups[0].read_bytes())
+            self.assertEqual([], list(root.rglob("*.tmp")))
+
     def test_cli_refuses_summary_that_would_overwrite_regression_baseline(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -355,14 +355,6 @@ def _regression_gate_evidence(current: dict[str, float], baseline: dict[str, flo
     }
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for block in iter(lambda: file.read(MB), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _execute_matrix(runs: int) -> tuple[list[BenchmarkResult], float]:
     started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="yzip-native-dataset-") as temp:
@@ -377,30 +369,103 @@ def _execute_matrix(runs: int) -> tuple[list[BenchmarkResult], float]:
     return results, time.perf_counter() - started
 
 
+def _stage_json(path: Path, document: dict) -> tuple[Path, bytes]:
+    data = json.dumps(document, indent=2).encode("utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="wb", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+    ) as file:
+        temporary = Path(file.name)
+        file.write(data)
+        file.flush()
+        os.fsync(file.fileno())
+    return temporary, data
+
+
+def _remove_artifact(path: Path | None, errors: list[str]) -> None:
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as error:
+        errors.append(f"cleanup {path}: {error}")
+
+
 def _atomic_write_json(path: Path, document: dict, label: str) -> None:
     temporary = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            mode="wb", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
-        ) as file:
-            temporary = Path(file.name)
-            file.write(json.dumps(document, indent=2).encode("utf-8"))
-            file.flush()
-            os.fsync(file.fileno())
+        temporary, _data = _stage_json(path, document)
         os.replace(temporary, path)
+        temporary = None
     except OSError as error:
-        if temporary is not None:
+        cleanup_errors = []
+        _remove_artifact(temporary, cleanup_errors)
+        suffix = f"; cleanup failed: {'; '.join(cleanup_errors)}" if cleanup_errors else ""
+        raise OSError(f"failed to write benchmark {label}: {path}: {error}{suffix}") from error
+
+
+def _backup_path(path: Path) -> Path:
+    descriptor, name = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".bak"
+    )
+    os.close(descriptor)
+    backup = Path(name)
+    backup.unlink()
+    return backup
+
+
+def _atomic_write_evidence_pair(raw_path: Path, raw_document: dict,
+                                summary_path: Path, summary_document: dict) -> None:
+    raw_temp = None
+    summary_temp = None
+    backups: dict[Path, Path | None] = {}
+    published: set[Path] = set()
+    try:
+        raw_temp, _raw_bytes = _stage_json(raw_path, raw_document)
+        summary_temp, _summary_bytes = _stage_json(summary_path, summary_document)
+        for target in (raw_path, summary_path):
+            if target.exists():
+                backup = _backup_path(target)
+                os.replace(target, backup)
+                backups[target] = backup
+            else:
+                backups[target] = None
+        os.replace(raw_temp, raw_path)
+        raw_temp = None
+        published.add(raw_path)
+        os.replace(summary_temp, summary_path)
+        summary_temp = None
+        published.add(summary_path)
+    except OSError as error:
+        rollback_errors = []
+        for target in (summary_path, raw_path):
+            backup = backups.get(target)
             try:
-                temporary.unlink(missing_ok=True)
-            except OSError:
-                pass
-        raise OSError(f"failed to write benchmark {label}: {path}: {error}") from error
+                if backup is not None and backup.exists():
+                    os.replace(backup, target)
+                    backups[target] = None
+                elif target in published:
+                    target.unlink(missing_ok=True)
+            except OSError as rollback_error:
+                retained = f"; backup retained at {backup}" if backup is not None else ""
+                rollback_errors.append(f"restore {target}: {rollback_error}{retained}")
+        _remove_artifact(raw_temp, rollback_errors)
+        _remove_artifact(summary_temp, rollback_errors)
+        suffix = f"; rollback failed: {'; '.join(rollback_errors)}" if rollback_errors else ""
+        raise OSError(f"failed to publish benchmark evidence pair: {error}{suffix}") from error
+    cleanup_errors = []
+    for backup in backups.values():
+        _remove_artifact(backup, cleanup_errors)
+    if cleanup_errors:
+        raise OSError(
+            "benchmark evidence pair was published but backup cleanup failed: "
+            + "; ".join(cleanup_errors)
+        )
 
 
-def _write_summary(path: Path, raw_path: Path, results: Sequence[BenchmarkResult], runs: int,
-                   elapsed: float, regressions: dict[str, float], status: str,
-                   regression_gate: dict) -> None:
+def _build_summary(raw_path: Path, raw_bytes: bytes, results: Sequence[BenchmarkResult],
+                   runs: int, elapsed: float, regressions: dict[str, float], status: str,
+                   regression_gate: dict) -> dict:
     current_medians = _seven_zip_medians(results)
     dataset_hashes = {
         result.case.dataset: result.sha256_tree
@@ -408,11 +473,11 @@ def _write_summary(path: Path, raw_path: Path, results: Sequence[BenchmarkResult
         if result.case.tool == "yzip" and result.case.format == "7z"
         and result.case.operation == "compress" and result.case.threads == 8
     }
-    summary = {
+    return {
         "schema_version": 1,
         "status": status,
         "raw_json_path": str(raw_path),
-        "raw_json_sha256": _sha256_file(raw_path),
+        "raw_json_sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "dataset_count": len(DATASET_NAMES),
         "case_count": len(results),
         "measured_runs_per_case": runs,
@@ -423,7 +488,6 @@ def _write_summary(path: Path, raw_path: Path, results: Sequence[BenchmarkResult
         "regression_fraction": regressions,
         "regression_gate": regression_gate,
     }
-    _atomic_write_json(path, summary, "summary")
 
 
 def _load_regression_baseline(path: Path) -> dict[str, float]:
@@ -516,12 +580,15 @@ def main(argv: Sequence[str] | None = None) -> int:
               "dataset_count": len(DATASET_NAMES), "regression_fraction": regressions,
               "regression_gate": regression_gate,
               "results": [result.to_json() for result in results]}
-    _atomic_write_json(args.output, report, "raw output")
     if args.summary:
-        _write_summary(
-            args.summary, args.output, results, args.runs, elapsed, regressions,
+        raw_bytes = json.dumps(report, indent=2).encode("utf-8")
+        summary = _build_summary(
+            args.output, raw_bytes, results, args.runs, elapsed, regressions,
             status, regression_gate,
         )
+        _atomic_write_evidence_pair(args.output, report, args.summary, summary)
+    else:
+        _atomic_write_json(args.output, report, "raw output")
     if status == "failed":
         name = next(name for name, item in regression_gate["datasets"].items()
                     if not item["passed"])
