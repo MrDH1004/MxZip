@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import tempfile
@@ -237,6 +238,8 @@ class BenchmarkNativeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             baseline = root / "baseline.json"
+            output = root / "result.json"
+            summary = root / "summary.json"
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
             results = [
                 self._gate_result(10.5001 if name == "large-text" else 10.0, name)
@@ -244,7 +247,54 @@ class BenchmarkNativeTests(unittest.TestCase):
             ]
             with mock.patch.object(benchmark, "DEFAULT_BASELINE", baseline):
                 with mock.patch.object(benchmark, "_execute_matrix", return_value=(results, 1.0)):
-                    self.assertNotEqual(benchmark.cli(["--output", str(root / "result.json")]), 0)
+                    code = benchmark.cli([
+                        "--output", str(output), "--summary", str(summary),
+                    ])
+            self.assertEqual(1, code)
+            self.assertTrue(output.is_file())
+            self.assertTrue(summary.is_file())
+            raw_document = json.loads(output.read_text(encoding="utf-8"))
+            summary_document = json.loads(summary.read_text(encoding="utf-8"))
+            self.assertEqual("failed", raw_document["status"])
+            self.assertEqual(5, raw_document["case_count"])
+            self.assertEqual("failed", summary_document["status"])
+            self.assertEqual(5, summary_document["case_count"])
+            self.assertEqual(0.05, raw_document["regression_gate"]["limit"])
+            self.assertFalse(
+                raw_document["regression_gate"]["datasets"]["large-text"]["passed"]
+            )
+            self.assertTrue(
+                raw_document["regression_gate"]["datasets"]["small-files"]["passed"]
+            )
+            self.assertAlmostEqual(
+                0.05001,
+                raw_document["regression_gate"]["datasets"]["large-text"]["fraction"],
+            )
+            self.assertEqual(
+                hashlib.sha256(output.read_bytes()).hexdigest(),
+                summary_document["raw_json_sha256"],
+            )
+
+    def test_atomic_raw_write_failure_preserves_existing_output_and_is_clear(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "baseline.json"
+            output = root / "result.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            output.write_bytes(b"existing evidence")
+            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            with mock.patch.object(
+                benchmark, "_execute_matrix", return_value=(results, 1.0)
+            ), mock.patch.object(
+                benchmark.os, "replace", side_effect=PermissionError("replace denied")
+            ), mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                code = benchmark.cli([
+                    "--output", str(output),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertEqual(1, code)
+            self.assertEqual(b"existing evidence", output.read_bytes())
+            self.assertIn("failed to write benchmark raw output", stderr.getvalue())
 
     def test_cli_refuses_summary_that_would_overwrite_regression_baseline(self):
         with tempfile.TemporaryDirectory() as temp:

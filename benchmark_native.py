@@ -324,14 +324,35 @@ def _seven_zip_medians(results: Sequence[BenchmarkResult]) -> dict[str, float]:
 
 def enforce_7z_regression_gate(current: dict[str, float], baseline: dict[str, float],
                                limit: float = 0.05) -> dict[str, float]:
-    if set(current) != set(baseline):
-        raise ValueError("7z regression datasets do not match")
-    regressions = {name: current[name] / baseline[name] - 1.0 for name in current}
-    failed = [(name, value) for name, value in regressions.items() if value > limit + 1e-12]
+    evidence = _regression_gate_evidence(current, baseline, limit)
+    regressions = {
+        name: result["fraction"] for name, result in evidence["datasets"].items()
+    }
+    failed = [(name, value) for name, value in regressions.items()
+              if not evidence["datasets"][name]["passed"]]
     if failed:
         name, value = failed[0]
         raise RuntimeError(f"7z 8-thread compression regression for {name}: {value:.2%} > {limit:.2%}")
     return regressions
+
+
+def _regression_gate_evidence(current: dict[str, float], baseline: dict[str, float],
+                              limit: float = 0.05) -> dict:
+    if set(current) != set(baseline):
+        raise ValueError("7z regression datasets do not match")
+    datasets = {}
+    for name in current:
+        fraction = current[name] / baseline[name] - 1.0
+        datasets[name] = {
+            "fraction": fraction,
+            "limit": limit,
+            "passed": fraction <= limit + 1e-12,
+        }
+    return {
+        "status": "passed" if all(item["passed"] for item in datasets.values()) else "failed",
+        "limit": limit,
+        "datasets": datasets,
+    }
 
 
 def _sha256_file(path: Path) -> str:
@@ -356,8 +377,30 @@ def _execute_matrix(runs: int) -> tuple[list[BenchmarkResult], float]:
     return results, time.perf_counter() - started
 
 
+def _atomic_write_json(path: Path, document: dict, label: str) -> None:
+    temporary = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+        ) as file:
+            temporary = Path(file.name)
+            file.write(json.dumps(document, indent=2).encode("utf-8"))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+    except OSError as error:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise OSError(f"failed to write benchmark {label}: {path}: {error}") from error
+
+
 def _write_summary(path: Path, raw_path: Path, results: Sequence[BenchmarkResult], runs: int,
-                   elapsed: float, regressions: dict[str, float]) -> None:
+                   elapsed: float, regressions: dict[str, float], status: str,
+                   regression_gate: dict) -> None:
     current_medians = _seven_zip_medians(results)
     dataset_hashes = {
         result.case.dataset: result.sha256_tree
@@ -365,9 +408,9 @@ def _write_summary(path: Path, raw_path: Path, results: Sequence[BenchmarkResult
         if result.case.tool == "yzip" and result.case.format == "7z"
         and result.case.operation == "compress" and result.case.threads == 8
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
     summary = {
         "schema_version": 1,
+        "status": status,
         "raw_json_path": str(raw_path),
         "raw_json_sha256": _sha256_file(raw_path),
         "dataset_count": len(DATASET_NAMES),
@@ -378,8 +421,9 @@ def _write_summary(path: Path, raw_path: Path, results: Sequence[BenchmarkResult
         "dataset_sha256_trees": dataset_hashes,
         "seven_zip_8_thread_medians_seconds": current_medians,
         "regression_fraction": regressions,
+        "regression_gate": regression_gate,
     }
-    path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    _atomic_write_json(path, summary, "summary")
 
 
 def _load_regression_baseline(path: Path) -> dict[str, float]:
@@ -451,15 +495,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     results, elapsed = _execute_matrix(args.runs)
     current_medians = _seven_zip_medians(results)
     if baseline_medians is not None:
-        regressions = enforce_7z_regression_gate(current_medians, baseline_medians)
+        regression_gate = _regression_gate_evidence(current_medians, baseline_medians)
+        regressions = {
+            name: item["fraction"]
+            for name, item in regression_gate["datasets"].items()
+        }
     else:
         regressions = {name: 0.0 for name in current_medians}
-    report = {"schema_version": 2, "runs": args.runs, "warmup_runs": 1,
+        regression_gate = {
+            "status": "passed", "limit": 0.05,
+            "datasets": {
+                name: {"fraction": 0.0, "limit": 0.05, "passed": True}
+                for name in current_medians
+            },
+        }
+    status = regression_gate["status"]
+    report = {"schema_version": 2, "status": status,
+              "runs": args.runs, "warmup_runs": 1,
+              "case_count": len(results),
               "dataset_count": len(DATASET_NAMES), "regression_fraction": regressions,
+              "regression_gate": regression_gate,
               "results": [result.to_json() for result in results]}
-    args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    _atomic_write_json(args.output, report, "raw output")
     if args.summary:
-        _write_summary(args.summary, args.output, results, args.runs, elapsed, regressions)
+        _write_summary(
+            args.summary, args.output, results, args.runs, elapsed, regressions,
+            status, regression_gate,
+        )
+    if status == "failed":
+        name = next(name for name, item in regression_gate["datasets"].items()
+                    if not item["passed"])
+        fraction = regression_gate["datasets"][name]["fraction"]
+        limit = regression_gate["limit"]
+        raise RuntimeError(
+            f"7z 8-thread compression regression for {name}: {fraction:.2%} > {limit:.2%}"
+        )
     return 0
 
 
