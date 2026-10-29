@@ -10,7 +10,38 @@ All three `yzip_accel.dll` operations remain disabled by default. They are diagn
 
 `YZIP_DISABLE_ACCEL=1` overrides all three. Unsupported, encrypted, split, unavailable, ABI-mismatched, or otherwise ineligible inputs retain the existing whole-operation Python path.
 
-These tables combine three separately captured result sets. They are not one final Task 6 matrix. A fresh current-HEAD 1/4/8/16-thread, seven-run matrix is still required before release; no result below is presented as that final rerun.
+The Task 6 current-HEAD matrix is now complete, but its historical 7z compression regression gate failed. Release remains blocked. The earlier Task 1, Task 4, and Task 5 evidence below remains useful for comparison, but it is not substituted for the Task 6 run.
+
+## Task 6 current-HEAD matrix
+
+The matrix ran from commit `88eb72eaaa65eebb8105eab1cf31a3443d6446fa` with five datasets, two programs, two formats, two operations, and requested thread counts 1/4/8/16: 160 cases total. Each case used one warm-up plus seven measured fresh subprocess runs. Total matrix elapsed time was 2,503.662 seconds (41 minutes 43.662 seconds). Thread counts are CLI requests, not observed internal worker counts.
+
+Raw ignored artifact: `.omc/artifacts/native-performance-final/current.json`; SHA-256: `2b2499f06ad5165cfb4afef30367ad41a41209919fc8012ab22e486091f224bd`. Machine-readable summary: `.omc/artifacts/native-performance-final/current-summary.json`.
+
+At requested 8 threads, the five-dataset wall-time geometric means were:
+
+| Operation | yzip/Bandizip | yzip wins |
+|---|---:|---:|
+| ZIP compression | 3.1637x | 0/5 |
+| ZIP extraction | 3.1327x | 0/5 |
+| 7z compression | 3.5362x | 0/5 |
+| 7z extraction | 7.1198x | 0/5 |
+
+These are end-to-end CLI measurements including process startup. Extraction follows the benchmark's opposite-producer archive preparation, so it does not compare both tools against identical archive bytes.
+
+At requested 8 threads, compression archive-size geometric means were 0.9891x for ZIP and 1.7230x for 7z (yzip/Bandizip). The 7z result is dominated by `small-files`, where the ratio was 12.5734x. Across each tool's 20 requested-8-thread cases, median CPU time was 0.109375 seconds for Bandizip and 0.296875 seconds for yzip. Median peak RSS was 12.46 MiB and 39.95 MiB respectively; observed maxima were 199.52 MiB and 292.79 MiB. These aggregate CLI processes and are not codec-only resource measurements.
+
+The historical regression gate compares current yzip 7z compression at requested 8 threads with the committed Task 1 baseline. It failed overall:
+
+| Dataset | Current median | Historical regression | Gate (<= +5%) |
+|---|---:|---:|---:|
+| large-text | 0.298375 s | +15.5008% | FAIL |
+| incompressible | 2.499253 s | +36.8039% | FAIL |
+| small-files | 0.701919 s | +23.6803% | FAIL |
+| mixed-project | 0.370136 s | -3.1183% | PASS |
+| large-file | 0.366385 s | -24.1696% | PASS |
+
+The full matrix ran while an external video workload (`pipeline`/RIFE/FFmpeg) was observed on the machine. That concurrency is a measurement confounder; it does not turn the failed historical gate into a pass. A separate same-time diagnostic compared old commit `4dc8d7a` with current commit `88eb72e` for incompressible yzip 7z compression at requested 8 threads. Its five paired seven-run median ratios (current/old) were `1.0979804116310825`, `1.0175822002297623`, `1.0232991625938561`, `1.0011716987506925`, and `1.0706072848204216`: median +2.3299%, geometric mean +4.1504%. This paired diagnostic suggests a smaller same-time difference than the historical comparison, but it covers one dataset and one operation only. It is not a replacement for the 160-case gate and cannot clear the release block.
 
 ## Task 1 CLI baseline
 
@@ -66,6 +97,6 @@ Archive-size gates passed, but native was slower in every condition and remains 
 
 Canonical ignored evidence: `.superpowers/sdd/2026-10-28-native-performance-hybrid/task5-benchmark.json`. Driver: `task5_bench.py`. It covers only requested threads 1 and 8 and is not a substitute for the final Task 6 1/4/8/16 rerun.
 
-## Release evidence still required
+## Release status
 
-Before a release claim, rerun the complete current-HEAD matrix at requested threads 1/4/8/16 with one warm-up and at least seven measured runs. Record tool/runtime versions, raw-artifact SHA-256, actual native selection, median/p95, CPU, peak RSS, archive sizes, and cross-extraction tree hashes. Recheck the existing-yzip 7z compression 8-thread regression gate. Until that evidence exists, the paths above remain opt-in and this document records historical canonical evidence only.
+The required current-HEAD matrix exists, but its historical 7z compression 8-thread regression gate failed and the run had concurrent external video-processing load. Release remains blocked pending a controlled rerun and a passing gate or an explicit reviewed disposition. The native paths remain opt-in.
