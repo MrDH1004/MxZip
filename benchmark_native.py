@@ -313,16 +313,66 @@ def _prepare_archives(datasets: dict[str, Path], archive_root: Path) -> None:
                     shutil.move(generated, case.archive)
 
 
-def _seven_zip_medians(results: Sequence[BenchmarkResult]) -> dict[str, float]:
-    return {
-        result.case.dataset: result.wall_median_seconds
-        for result in results
-        if result.case.tool == "yzip" and result.case.format == "7z"
-        and result.case.operation == "compress" and result.case.threads == 8
-    }
+REGRESSION_METHODOLOGY = "paired-yzip-over-bandizip-ratio-v1"
 
 
-def enforce_7z_regression_gate(current: dict[str, float], baseline: dict[str, float],
+def _validate_median(value, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{label} must be numeric")
+    numeric = float(value)
+    if not math.isfinite(numeric) or numeric <= 0:
+        raise ValueError(f"{label} must be positive and finite")
+    return numeric
+
+
+def _paired_7z_medians(results: Sequence[BenchmarkResult]) -> dict[str, dict[str, float]]:
+    pairs = {name: {} for name in DATASET_NAMES}
+    for result in results:
+        case = result.case
+        if (case.format != "7z" or case.operation != "compress" or case.threads != 8
+                or case.tool not in ("yzip", "bandizip")):
+            continue
+        if case.dataset not in pairs:
+            raise ValueError(f"unexpected paired regression dataset: {case.dataset}")
+        if case.tool in pairs[case.dataset]:
+            raise ValueError(f"duplicate paired regression case: {case.dataset}/{case.tool}")
+        pairs[case.dataset][case.tool] = _validate_median(
+            result.wall_median_seconds, f"current median for {case.dataset}/{case.tool}"
+        )
+    missing = [f"{name}/{tool}" for name in DATASET_NAMES
+               for tool in ("yzip", "bandizip") if tool not in pairs[name]]
+    if missing:
+        raise ValueError(f"missing paired regression cases: {missing}")
+    return pairs
+
+
+def _paired_7z_medians_json(results: Sequence[dict]) -> dict[str, dict[str, float]]:
+    pairs = {name: {} for name in DATASET_NAMES}
+    for result in results:
+        if not isinstance(result, dict) or not isinstance(result.get("case"), dict):
+            raise ValueError("existing raw result must contain a case object")
+        case = result["case"]
+        if (case.get("format") != "7z" or case.get("operation") != "compress"
+                or case.get("threads") != 8 or case.get("tool") not in ("yzip", "bandizip")):
+            continue
+        dataset = case.get("dataset")
+        tool = case["tool"]
+        if dataset not in pairs:
+            raise ValueError(f"unexpected paired regression dataset: {dataset}")
+        if tool in pairs[dataset]:
+            raise ValueError(f"duplicate paired regression case: {dataset}/{tool}")
+        pairs[dataset][tool] = _validate_median(
+            result.get("wall_median_seconds"), f"current median for {dataset}/{tool}"
+        )
+    missing = [f"{name}/{tool}" for name in DATASET_NAMES
+               for tool in ("yzip", "bandizip") if tool not in pairs[name]]
+    if missing:
+        raise ValueError(f"missing paired regression cases: {missing}")
+    return pairs
+
+
+def enforce_7z_regression_gate(current: dict[str, dict[str, float]],
+                               baseline: dict[str, dict[str, float]],
                                limit: float = 0.05) -> dict[str, float]:
     evidence = _regression_gate_evidence(current, baseline, limit)
     regressions = {
@@ -336,19 +386,37 @@ def enforce_7z_regression_gate(current: dict[str, float], baseline: dict[str, fl
     return regressions
 
 
-def _regression_gate_evidence(current: dict[str, float], baseline: dict[str, float],
+def _regression_gate_evidence(current: dict[str, dict[str, float]],
+                              baseline: dict[str, dict[str, float]],
                               limit: float = 0.05) -> dict:
     if set(current) != set(baseline):
         raise ValueError("7z regression datasets do not match")
     datasets = {}
     for name in current:
-        fraction = current[name] / baseline[name] - 1.0
+        current_yzip = _validate_median(current[name].get("yzip"), f"current {name}/yzip")
+        current_bandizip = _validate_median(
+            current[name].get("bandizip"), f"current {name}/bandizip"
+        )
+        baseline_yzip = _validate_median(baseline[name].get("yzip"), f"baseline {name}/yzip")
+        baseline_bandizip = _validate_median(
+            baseline[name].get("bandizip"), f"baseline {name}/bandizip"
+        )
+        current_ratio = current_yzip / current_bandizip
+        baseline_ratio = baseline_yzip / baseline_bandizip
+        fraction = current_ratio / baseline_ratio - 1.0
         datasets[name] = {
+            "current_yzip_median_seconds": current_yzip,
+            "current_bandizip_median_seconds": current_bandizip,
+            "baseline_yzip_median_seconds": baseline_yzip,
+            "baseline_bandizip_median_seconds": baseline_bandizip,
+            "current_yzip_bandizip_ratio": current_ratio,
+            "baseline_yzip_bandizip_ratio": baseline_ratio,
             "fraction": fraction,
             "limit": limit,
             "passed": fraction <= limit + 1e-12,
         }
     return {
+        "methodology": REGRESSION_METHODOLOGY,
         "status": "passed" if all(item["passed"] for item in datasets.values()) else "failed",
         "limit": limit,
         "datasets": datasets,
@@ -463,19 +531,23 @@ def _atomic_write_evidence_pair(raw_path: Path, raw_document: dict,
         )
 
 
-def _build_summary(raw_path: Path, raw_bytes: bytes, results: Sequence[BenchmarkResult],
+def _build_summary(raw_path: Path, raw_bytes: bytes, results: Sequence[dict],
                    runs: int, elapsed: float, regressions: dict[str, float], status: str,
-                   regression_gate: dict) -> dict:
-    current_medians = _seven_zip_medians(results)
+                   regression_gate: dict, evaluation_provenance: dict | None = None) -> dict:
+    paired = _paired_7z_medians_json(results)
+    yzip_medians = {name: paired[name]["yzip"] for name in DATASET_NAMES}
+    bandizip_medians = {name: paired[name]["bandizip"] for name in DATASET_NAMES}
+    ratios = {name: yzip_medians[name] / bandizip_medians[name] for name in DATASET_NAMES}
     dataset_hashes = {
-        result.case.dataset: result.sha256_tree
+        result["case"]["dataset"]: result["sha256_tree"]
         for result in results
-        if result.case.tool == "yzip" and result.case.format == "7z"
-        and result.case.operation == "compress" and result.case.threads == 8
+        if result["case"]["tool"] == "yzip" and result["case"]["format"] == "7z"
+        and result["case"]["operation"] == "compress" and result["case"]["threads"] == 8
     }
-    return {
+    summary = {
         "schema_version": 1,
         "status": status,
+        "regression_methodology": REGRESSION_METHODOLOGY,
         "raw_json_path": str(raw_path),
         "raw_json_sha256": hashlib.sha256(raw_bytes).hexdigest(),
         "dataset_count": len(DATASET_NAMES),
@@ -484,45 +556,75 @@ def _build_summary(raw_path: Path, raw_bytes: bytes, results: Sequence[Benchmark
         "warmup_runs_per_case": 1,
         "elapsed_seconds": elapsed,
         "dataset_sha256_trees": dataset_hashes,
-        "seven_zip_8_thread_medians_seconds": current_medians,
+        "seven_zip_8_thread_medians_seconds": yzip_medians,
+        "bandizip_seven_zip_8_thread_medians_seconds": bandizip_medians,
+        "seven_zip_8_thread_yzip_bandizip_ratios": ratios,
         "regression_fraction": regressions,
         "regression_gate": regression_gate,
     }
+    if evaluation_provenance is not None:
+        summary["evaluation_provenance"] = evaluation_provenance
+    return summary
 
 
-def _load_regression_baseline(path: Path) -> dict[str, float]:
+def _load_regression_baseline(path: Path) -> dict[str, dict[str, float]]:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ValueError(f"regression baseline could not be read as JSON: {path}: {error}") from error
     if not isinstance(document, dict) or document.get("schema_version") != 1:
         raise ValueError("regression baseline must use committed summary schema_version 1")
-    medians = document.get("seven_zip_8_thread_medians_seconds")
-    if not isinstance(medians, dict):
+    if document.get("regression_methodology") != REGRESSION_METHODOLOGY:
+        raise ValueError(f"regression baseline methodology must be {REGRESSION_METHODOLOGY}")
+    yzip_medians = document.get("seven_zip_8_thread_medians_seconds")
+    bandizip_medians = document.get("bandizip_seven_zip_8_thread_medians_seconds")
+    ratios = document.get("seven_zip_8_thread_yzip_bandizip_ratios")
+    if not isinstance(yzip_medians, dict) or not isinstance(bandizip_medians, dict):
         raise ValueError(
-            "regression baseline seven_zip_8_thread_medians_seconds must be an object"
+            "regression baseline yzip and Bandizip median fields must be objects"
         )
+    if not isinstance(ratios, dict):
+        raise ValueError("regression baseline paired ratio field must be an object")
     expected = set(DATASET_NAMES)
-    actual = set(medians)
-    if actual != expected:
-        missing = sorted(expected - actual)
-        unexpected = sorted(actual - expected)
-        raise ValueError(
-            "regression baseline datasets must exactly match DATASET_NAMES; "
-            f"missing={missing}, unexpected={unexpected}"
-        )
-    validated = {}
-    for name in DATASET_NAMES:
-        value = medians[name]
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError(f"regression baseline median for {name} must be numeric")
-        numeric = float(value)
-        if not math.isfinite(numeric) or numeric <= 0:
+    for label, values in (("yzip medians", yzip_medians),
+                          ("Bandizip medians", bandizip_medians), ("ratios", ratios)):
+        actual = set(values)
+        if actual != expected:
+            missing = sorted(expected - actual)
+            unexpected = sorted(actual - expected)
             raise ValueError(
-                f"regression baseline median for {name} must be positive and finite"
+                f"regression baseline {label} datasets must exactly match DATASET_NAMES; "
+                f"missing={missing}, unexpected={unexpected}"
             )
-        validated[name] = numeric
+    validated: dict[str, dict[str, float]] = {}
+    for name in DATASET_NAMES:
+        yzip = _validate_median(yzip_medians[name], f"regression baseline yzip median for {name}")
+        bandizip = _validate_median(
+            bandizip_medians[name], f"regression baseline Bandizip median for {name}"
+        )
+        ratio = _validate_median(ratios[name], f"regression baseline ratio for {name}")
+        calculated = yzip / bandizip
+        if not math.isclose(ratio, calculated, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError(f"regression baseline ratio does not match medians for {name}")
+        validated[name] = {"yzip": yzip, "bandizip": bandizip}
     return validated
+
+
+def _load_existing_raw(path: Path) -> tuple[dict, bytes]:
+    try:
+        raw_bytes = path.read_bytes()
+        document = json.loads(raw_bytes.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"existing benchmark raw could not be read as UTF-8 JSON: {path}: {error}") from error
+    if not isinstance(document, dict) or document.get("schema_version") != 2:
+        raise ValueError("existing benchmark raw must use schema_version 2")
+    results = document.get("results")
+    if not isinstance(results, list):
+        raise ValueError("existing benchmark raw results must be an array")
+    if document.get("case_count", len(results)) != len(results):
+        raise ValueError("existing benchmark raw case_count does not match results")
+    _paired_7z_medians_json(results)
+    return document, raw_bytes
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -531,10 +633,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--summary", type=Path)
     parser.add_argument("--regression-baseline", type=Path)
     parser.add_argument("--create-baseline", action="store_true")
+    parser.add_argument("--evaluate-existing", type=Path)
     parser.add_argument("--runs", type=int, default=7)
     args = parser.parse_args(argv)
-    if not BZ_EXE.is_file():
+    if not args.evaluate_existing and not BZ_EXE.is_file():
         parser.error(f"Bandizip console tool not found: {BZ_EXE}")
+    if args.evaluate_existing and args.create_baseline:
+        parser.error("--evaluate-existing cannot be combined with --create-baseline")
     if args.create_baseline:
         if args.regression_baseline:
             parser.error("--create-baseline cannot be combined with --regression-baseline")
@@ -548,16 +653,41 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_resolved = args.output.resolve()
     summary_resolved = args.summary.resolve() if args.summary else None
     baseline_resolved = baseline_path.resolve() if baseline_path else None
+    existing_resolved = args.evaluate_existing.resolve() if args.evaluate_existing else None
+    if args.evaluate_existing and not args.evaluate_existing.is_file():
+        parser.error(f"existing benchmark raw not found: {args.evaluate_existing}")
     if summary_resolved and output_resolved == summary_resolved:
         parser.error("--output and --summary must use different paths")
     if baseline_resolved and output_resolved == baseline_resolved:
         parser.error("--output must not overwrite the regression baseline")
     if baseline_resolved and summary_resolved == baseline_resolved:
         parser.error("--summary must not overwrite the regression baseline")
+    if existing_resolved and output_resolved == existing_resolved:
+        parser.error("--output must not overwrite the evaluated raw input")
+    if existing_resolved and summary_resolved == existing_resolved:
+        parser.error("--summary must not overwrite the evaluated raw input")
+    if existing_resolved and baseline_resolved == existing_resolved:
+        parser.error("--regression-baseline must not be the evaluated raw input")
     baseline_medians = _load_regression_baseline(baseline_path) if baseline_path else None
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    results, elapsed = _execute_matrix(args.runs)
-    current_medians = _seven_zip_medians(results)
+    evaluation_provenance = None
+    if args.evaluate_existing:
+        source_document, source_bytes = _load_existing_raw(args.evaluate_existing)
+        results_json = source_document["results"]
+        current_medians = _paired_7z_medians_json(results_json)
+        runs = source_document.get("runs", args.runs)
+        elapsed = source_document.get("elapsed_seconds", 0.0)
+        report = dict(source_document)
+        evaluation_provenance = {
+            "input_raw_path": str(args.evaluate_existing),
+            "input_raw_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        }
+    else:
+        results, elapsed = _execute_matrix(args.runs)
+        results_json = [result.to_json() for result in results]
+        current_medians = _paired_7z_medians(results)
+        runs = args.runs
+        report = {}
     if baseline_medians is not None:
         regression_gate = _regression_gate_evidence(current_medians, baseline_medians)
         regressions = {
@@ -565,26 +695,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             for name, item in regression_gate["datasets"].items()
         }
     else:
+        regression_gate = _regression_gate_evidence(current_medians, current_medians)
         regressions = {name: 0.0 for name in current_medians}
-        regression_gate = {
-            "status": "passed", "limit": 0.05,
-            "datasets": {
-                name: {"fraction": 0.0, "limit": 0.05, "passed": True}
-                for name in current_medians
-            },
-        }
     status = regression_gate["status"]
-    report = {"schema_version": 2, "status": status,
-              "runs": args.runs, "warmup_runs": 1,
-              "case_count": len(results),
-              "dataset_count": len(DATASET_NAMES), "regression_fraction": regressions,
-              "regression_gate": regression_gate,
-              "results": [result.to_json() for result in results]}
+    report.update({"schema_version": 2, "status": status,
+                   "regression_methodology": REGRESSION_METHODOLOGY,
+                   "runs": runs, "warmup_runs": report.get("warmup_runs", 1),
+                   "case_count": len(results_json),
+                   "dataset_count": len(DATASET_NAMES), "regression_fraction": regressions,
+                   "regression_gate": regression_gate,
+                   "results": results_json})
+    if evaluation_provenance is not None:
+        report["evaluation_provenance"] = evaluation_provenance
     if args.summary:
         raw_bytes = json.dumps(report, indent=2).encode("utf-8")
         summary = _build_summary(
-            args.output, raw_bytes, results, args.runs, elapsed, regressions,
-            status, regression_gate,
+            args.output, raw_bytes, results_json, runs, elapsed, regressions,
+            status, regression_gate, evaluation_provenance,
         )
         _atomic_write_evidence_pair(args.output, report, args.summary, summary)
     else:

@@ -153,30 +153,134 @@ class BenchmarkNativeTests(unittest.TestCase):
         )
         self.assertEqual(result.to_json()["case"]["dataset"], "small-files")
 
-    def test_7z_eight_thread_regression_gate_accepts_exactly_five_percent(self):
-        current = {"large-text": 10.5}
-        regression = benchmark.enforce_7z_regression_gate(current, {"large-text": 10.0})
-        self.assertAlmostEqual(regression["large-text"], 0.05)
+    def test_7z_gate_common_yzip_and_bandizip_slowdown_cancels(self):
+        current = {"large-text": {"yzip": 12.0, "bandizip": 6.0}}
+        baseline = {"large-text": {"yzip": 10.0, "bandizip": 5.0}}
+        regression = benchmark.enforce_7z_regression_gate(current, baseline)
+        self.assertAlmostEqual(regression["large-text"], 0.0)
 
-    def test_7z_eight_thread_regression_gate_rejects_over_five_percent(self):
+    def test_7z_gate_rejects_yzip_only_slowdown_over_five_percent(self):
+        current = {"large-text": {"yzip": 10.5001, "bandizip": 5.0}}
+        baseline = {"large-text": {"yzip": 10.0, "bandizip": 5.0}}
         with self.assertRaisesRegex(RuntimeError, "large-text.*5.00%"):
-            benchmark.enforce_7z_regression_gate({"large-text": 10.5001}, {"large-text": 10.0})
+            benchmark.enforce_7z_regression_gate(current, baseline)
 
-    def _gate_result(self, median, dataset="large-text"):
+    def _gate_result(self, median, dataset="large-text", tool="yzip"):
         return benchmark.BenchmarkResult(
-            case=self._case(dataset=dataset, tool="yzip", format="7z", operation="compress", threads=8),
+            case=self._case(dataset=dataset, tool=tool, format="7z", operation="compress", threads=8),
             measured_runs=7, wall_median_seconds=median, wall_p95_seconds=median,
             cpu_median_seconds=median, peak_rss_bytes=1, archive_size_bytes=1,
             requested_threads=8, command=("tool",), sha256_tree="hash",
         )
 
-    def _baseline_summary(self, medians=None):
-        if medians is None:
-            medians = {name: 10.0 for name in benchmark.DATASET_NAMES}
+    def _baseline_summary(self, yzip_medians=None, bandizip_medians=None):
+        if yzip_medians is None:
+            yzip_medians = {name: 10.0 for name in benchmark.DATASET_NAMES}
+        if bandizip_medians is None:
+            bandizip_medians = {name: 5.0 for name in benchmark.DATASET_NAMES}
         return {
             "schema_version": 1,
-            "seven_zip_8_thread_medians_seconds": medians,
+            "regression_methodology": "paired-yzip-over-bandizip-ratio-v1",
+            "seven_zip_8_thread_medians_seconds": yzip_medians,
+            "bandizip_seven_zip_8_thread_medians_seconds": bandizip_medians,
+            "seven_zip_8_thread_yzip_bandizip_ratios": {
+                name: yzip_medians[name] / bandizip_medians[name]
+                for name in yzip_medians if name in bandizip_medians
+            },
         }
+
+    def _paired_results(self, yzip=10.0, bandizip=5.0):
+        results = []
+        for name in benchmark.DATASET_NAMES:
+            results.append(self._gate_result(bandizip, name, "bandizip"))
+            results.append(self._gate_result(yzip, name, "yzip"))
+        return results
+
+    def test_paired_medians_reject_missing_or_duplicate_tool_cases(self):
+        complete = self._paired_results()
+        missing = complete[1:]
+        duplicate = complete + [self._gate_result(10.0, "large-text", "yzip")]
+        for label, results in (("missing", missing), ("duplicate", duplicate)):
+            with self.subTest(label=label), self.assertRaisesRegex(ValueError, label):
+                benchmark._paired_7z_medians(results)
+
+    def test_evaluate_existing_never_runs_matrix_and_preserves_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "baseline.json"
+            source = root / "source.json"
+            output = root / "evaluated.json"
+            summary = root / "evaluated-summary.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            source_document = {
+                "schema_version": 2,
+                "runs": 7,
+                "warmup_runs": 1,
+                "dataset_count": 5,
+                "case_count": 10,
+                "results": [result.to_json() for result in self._paired_results()],
+            }
+            source.write_text(json.dumps(source_document, indent=2), encoding="utf-8")
+            original = source.read_bytes()
+            with mock.patch.object(benchmark, "_execute_matrix") as execute:
+                code = benchmark.cli([
+                    "--evaluate-existing", str(source),
+                    "--output", str(output), "--summary", str(summary),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertEqual(0, code)
+            execute.assert_not_called()
+            self.assertEqual(original, source.read_bytes())
+            evaluated = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(source_document["results"], evaluated["results"])
+            self.assertEqual(
+                hashlib.sha256(original).hexdigest(),
+                evaluated["evaluation_provenance"]["input_raw_sha256"],
+            )
+            self.assertEqual("paired-yzip-over-bandizip-ratio-v1",
+                             evaluated["regression_methodology"])
+
+    def test_evaluate_existing_missing_pair_fails_before_publishing(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "baseline.json"
+            source = root / "source.json"
+            output = root / "evaluated.json"
+            summary = root / "evaluated-summary.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            results = [result.to_json() for result in self._paired_results()][1:]
+            source.write_text(json.dumps({
+                "schema_version": 2, "case_count": len(results), "results": results,
+            }), encoding="utf-8")
+            with mock.patch.object(benchmark, "_execute_matrix") as execute:
+                code = benchmark.cli([
+                    "--evaluate-existing", str(source),
+                    "--output", str(output), "--summary", str(summary),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertEqual(1, code)
+            execute.assert_not_called()
+            self.assertFalse(output.exists())
+            self.assertFalse(summary.exists())
+
+    def test_evaluate_existing_refuses_to_overwrite_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "baseline.json"
+            source = root / "source.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            source.write_text(json.dumps({
+                "schema_version": 2, "case_count": 0, "results": [],
+            }), encoding="utf-8")
+            original = source.read_bytes()
+            with mock.patch.object(benchmark, "_execute_matrix") as execute:
+                code = benchmark.cli([
+                    "--evaluate-existing", str(source), "--output", str(source),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertNotEqual(0, code)
+            execute.assert_not_called()
+            self.assertEqual(original, source.read_bytes())
 
     def test_invalid_baseline_medians_fail_before_matrix_execution(self):
         invalid_cases = {
@@ -212,7 +316,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             root = Path(temp)
             baseline = root / "baseline.json"
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
-            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            results = self._paired_results()
             with mock.patch.object(
                 benchmark, "_execute_matrix", return_value=(results, 1.0)
             ) as execute:
@@ -229,7 +333,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             baseline = root / "baseline.json"
             output = root / "result.json"
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
-            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            results = self._paired_results()
             with mock.patch.object(benchmark, "DEFAULT_BASELINE", baseline):
                 with mock.patch.object(benchmark, "_execute_matrix", return_value=(results, 1.0)):
                     self.assertEqual(benchmark.cli(["--output", str(output)]), 0)
@@ -241,10 +345,12 @@ class BenchmarkNativeTests(unittest.TestCase):
             output = root / "result.json"
             summary = root / "summary.json"
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
-            results = [
-                self._gate_result(10.5001 if name == "large-text" else 10.0, name)
-                for name in benchmark.DATASET_NAMES
-            ]
+            results = []
+            for name in benchmark.DATASET_NAMES:
+                results.append(self._gate_result(5.0, name, "bandizip"))
+                results.append(self._gate_result(
+                    10.5001 if name == "large-text" else 10.0, name, "yzip"
+                ))
             with mock.patch.object(benchmark, "DEFAULT_BASELINE", baseline):
                 with mock.patch.object(benchmark, "_execute_matrix", return_value=(results, 1.0)):
                     code = benchmark.cli([
@@ -256,9 +362,9 @@ class BenchmarkNativeTests(unittest.TestCase):
             raw_document = json.loads(output.read_text(encoding="utf-8"))
             summary_document = json.loads(summary.read_text(encoding="utf-8"))
             self.assertEqual("failed", raw_document["status"])
-            self.assertEqual(5, raw_document["case_count"])
+            self.assertEqual(10, raw_document["case_count"])
             self.assertEqual("failed", summary_document["status"])
-            self.assertEqual(5, summary_document["case_count"])
+            self.assertEqual(10, summary_document["case_count"])
             self.assertEqual(0.05, raw_document["regression_gate"]["limit"])
             self.assertFalse(
                 raw_document["regression_gate"]["datasets"]["large-text"]["passed"]
@@ -282,7 +388,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             output = root / "result.json"
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
             output.write_bytes(b"existing evidence")
-            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            results = self._paired_results()
             with mock.patch.object(
                 benchmark, "_execute_matrix", return_value=(results, 1.0)
             ), mock.patch.object(
@@ -309,7 +415,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
             output.write_bytes(b"old raw evidence")
             summary.write_bytes(b"old summary evidence")
-            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            results = self._paired_results()
             real_replace = benchmark.os.replace
             failed = False
 
@@ -344,7 +450,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             output = root / "result.json"
             summary = root / "summary.json"
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
-            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            results = self._paired_results()
             real_replace = benchmark.os.replace
             failed = False
 
@@ -380,7 +486,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
             output.write_bytes(b"old raw evidence")
             summary.write_bytes(b"old summary evidence")
-            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            results = self._paired_results()
             real_replace = benchmark.os.replace
             summary_failed = False
 
@@ -449,7 +555,7 @@ class BenchmarkNativeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             summary = root / "new-baseline.json"
-            with mock.patch.object(benchmark, "_execute_matrix", return_value=([self._gate_result(10.0)], 1.0)):
+            with mock.patch.object(benchmark, "_execute_matrix", return_value=(self._paired_results(), 1.0)):
                 code = benchmark.cli([
                     "--create-baseline", "--output", str(root / "raw.json"), "--summary", str(summary),
                 ])
