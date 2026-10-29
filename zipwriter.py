@@ -15,6 +15,8 @@ import runtimeconfig
 import struct
 import time
 import zlib
+import zipfile
+from archive_accel import AccelStatus, CAP_ZIP_CREATE, NativeZipCreateItem, load_accelerator
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
@@ -189,7 +191,7 @@ def _central_entry(e: _Entry) -> bytes:
 def write_zip(items, out_path: str, level: int = 6, store_only: bool = False,
               progress: Optional[Callable[[int, int, str], None]] = None,
               cancel: Optional[Callable[[], bool]] = None, workers: Optional[int] = None,
-              password: Optional[str] = None, copy=None):
+              password: Optional[str] = None, copy=None, allow_native: bool = True):
     """items: iterable of (absolute path, archive name); names ending in '/' are directory entries.
     password: encrypt file entries with WinZip AES-256 (the password is used as UTF-8).
     copy: (zip path, [(ZipInfo, new name)]) entries of an existing zip written first, byte for byte."""
@@ -206,6 +208,9 @@ def write_zip(items, out_path: str, level: int = 6, store_only: bool = False,
     total = sum(st.st_size for _, name, st in metadata if not name.endswith("/"))
     method = 0 if store_only else 8
     workers = min(workers, runtimeconfig.worker_count()) if workers else runtimeconfig.worker_count(16)
+    if _try_native_zip(metadata, out_path, 0 if store_only else level, workers,
+                       progress, cancel, password, copy, allow_native):
+        return
     window = workers * 2
     done = 0
     entries: list[_Entry] = []
@@ -318,3 +323,62 @@ def write_zip(items, out_path: str, level: int = 6, store_only: bool = False,
             out.write(struct.pack("<IIQI", 0x07064B50, 0, z64_off, 1))
             n, cd_size, cd_start = min(n, 0xFFFF), min(cd_size, 0xFFFFFFFF), min(cd_start, 0xFFFFFFFF)
         out.write(struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, n, n, cd_size, cd_start, 0))
+
+
+def _try_native_zip(metadata, out_path, level, workers, progress, cancel,
+                    password, copy, allow_native):
+    from ziplib import Cancelled
+    if (not metadata or not allow_native or password or copy or
+            os.environ.get("YZIP_NATIVE_ZIP_CREATE") != "1"):
+        return False
+    native_items = []
+    for path, name, st in metadata:
+        if os.path.islink(path):
+            return False
+        is_dir = name.endswith("/")
+        if is_dir != os.path.isdir(path):
+            return False
+        mode = st.st_mode
+        native_items.append(NativeZipCreateItem(
+            os.path.realpath(path), name.replace("\\", "/"),
+            0 if is_dir else st.st_size, st.st_mtime_ns,
+            ((mode & 0xFFFF) << 16) | (0x10 if is_dir else 0), is_dir,
+        ))
+    accelerator = load_accelerator()
+    if accelerator is None or not (accelerator.capabilities & CAP_ZIP_CREATE):
+        return False
+    result = accelerator.create_zip(native_items, out_path, level, workers, progress, cancel)
+    if result.status in (AccelStatus.UNAVAILABLE, AccelStatus.UNSUPPORTED):
+        try:
+            os.remove(out_path)
+        except FileNotFoundError:
+            pass
+        return False
+    if result.status == AccelStatus.CANCELLED:
+        raise Cancelled()
+    if result.status == AccelStatus.CORRUPT:
+        raise ValueError(accelerator.last_error() or "native ZIP input changed or output is corrupt")
+    if result.status == AccelStatus.IO_ERROR:
+        raise OSError(accelerator.last_error() or "native ZIP creation I/O failed")
+    if result.status != AccelStatus.OK:
+        raise RuntimeError(accelerator.last_error() or "native ZIP creation failed")
+    _verify_native_zip(out_path, metadata)
+    return True
+
+
+def _verify_native_zip(path, metadata):
+    expected = []
+    for source, name, original in metadata:
+        current = os.stat(source)
+        if (current.st_size != original.st_size or
+                current.st_mtime_ns != original.st_mtime_ns):
+            raise ValueError(f"Source changed during native ZIP creation: {source}")
+        expected.append((name.replace("\\", "/"), 0 if name.endswith("/") else original.st_size))
+    with zipfile.ZipFile(path) as archive:
+        infos = archive.infolist()
+        actual = [(info.filename, info.file_size) for info in infos]
+        if actual != expected:
+            raise ValueError("Native ZIP metadata does not match the source items")
+        bad = archive.testzip()
+        if bad is not None:
+            raise ValueError(f"Native ZIP CRC validation failed: {bad}")

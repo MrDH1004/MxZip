@@ -17,6 +17,7 @@ from typing import Callable, Iterable
 ABI_VERSION = 1
 CAP_ZIP_EXTRACT = 1 << 0
 CAP_7Z_EXTRACT = 1 << 1
+CAP_ZIP_CREATE = 1 << 2
 
 
 class AccelStatus(enum.IntEnum):
@@ -43,6 +44,16 @@ class Native7zJob:
     staging_path: str
     expected_size: int
     expected_crc: int
+
+
+@dataclass(frozen=True)
+class NativeZipCreateItem:
+    source_path: str
+    archive_name: str
+    size: int
+    modified_ns: int
+    attributes: int
+    is_dir: bool
 
 
 @dataclass(frozen=True)
@@ -80,6 +91,17 @@ class _CNativeZipJob(ctypes.Structure):
         ("staging_path", ctypes.c_wchar_p),
         ("expected_size", ctypes.c_uint64),
         ("expected_crc", ctypes.c_uint32),
+    ]
+
+
+class _CNativeZipCreateItem(ctypes.Structure):
+    _fields_ = [
+        ("source_path", ctypes.c_wchar_p),
+        ("archive_name", ctypes.c_wchar_p),
+        ("size", ctypes.c_uint64),
+        ("modified_ns", ctypes.c_int64),
+        ("attributes", ctypes.c_uint32),
+        ("is_dir", ctypes.c_uint32),
     ]
 
 
@@ -126,6 +148,11 @@ class Accelerator:
             ctypes.c_size_t,
         ]
         library.yz_accel_last_error.restype = ctypes.c_size_t
+        clear_error = getattr(library, "yz_accel_clear_error", None)
+        if clear_error is not None:
+            clear_error.argtypes = []
+            clear_error.restype = None
+            clear_error()
         library.yz_accel_cancel.argtypes = [ctypes.POINTER(ctypes.c_uint32)]
         library.yz_accel_cancel.restype = None
         self.abi_version = int(library.yz_accel_abi_version())
@@ -160,6 +187,22 @@ class Accelerator:
                 ctypes.c_uint64, ctypes.POINTER(_CNativeProgress), ctypes.POINTER(ctypes.c_uint32),
             ]
             extract_7z.restype = ctypes.c_uint32
+        create_zip = getattr(library, "yz_accel_create_zip", None)
+        if self.capabilities & CAP_ZIP_CREATE and create_zip is None:
+            raise AttributeError("missing required export: yz_accel_create_zip")
+        if create_zip is not None:
+            create_zip.argtypes = [
+                ctypes.c_wchar_p,
+                ctypes.POINTER(_CNativeZipCreateItem),
+                ctypes.c_size_t,
+                ctypes.c_wchar_p,
+                ctypes.c_uint32,
+                ctypes.c_uint32,
+                ctypes.c_uint64,
+                ctypes.POINTER(_CNativeProgress),
+                ctypes.POINTER(ctypes.c_uint32),
+            ]
+            create_zip.restype = ctypes.c_uint32
         metrics = getattr(library, "yz_accel_last_zip_metrics", None)
         if metrics is not None:
             metrics.argtypes = [ctypes.POINTER(_CNativeMetrics)]
@@ -280,6 +323,70 @@ class Accelerator:
 
     def extract_7z(self, source, jobs, progress, cancel) -> NativeResult:
         return self._extract_native(self._library.yz_accel_extract_7z, source, jobs, progress, cancel)
+
+    def create_zip(self, items, output_part, level, threads, progress, cancel) -> NativeResult:
+        native_items = list(items)
+        runtime_7z = _validated_7z_path()
+        if runtime_7z is None:
+            return NativeResult(AccelStatus.UNAVAILABLE, 0)
+        array_type = _CNativeZipCreateItem * len(native_items)
+        c_items = array_type(*(
+            _CNativeZipCreateItem(
+                item.source_path,
+                item.archive_name,
+                item.size,
+                item.modified_ns,
+                item.attributes,
+                int(item.is_dir),
+            )
+            for item in native_items
+        ))
+        total = sum(item.size for item in native_items if not item.is_dir)
+        metadata_allowance = sum(len(item.archive_name.encode("utf-8")) + 1024 for item in native_items)
+        output_limit = total + max(total // 100, 1 << 20) + metadata_allowance
+        test_limit = os.environ.get("YZIP_NATIVE_TEST_CREATE_LIMIT")
+        if test_limit is not None:
+            output_limit = int(test_limit)
+        counters = _CNativeProgress(0, total)
+        cancellation = CancellationFlag(self)
+        if cancel is not None and cancel():
+            cancellation.cancel()
+        stop = threading.Event()
+        callback_error: list[BaseException] = []
+
+        def poll() -> None:
+            while not stop.wait(0.1):
+                try:
+                    if cancel is not None and cancel():
+                        cancellation.cancel()
+                    if progress is not None:
+                        progress(int(counters.completed_bytes), total, "")
+                except BaseException as error:
+                    callback_error.append(error)
+                    cancellation.cancel()
+                    return
+
+        monitor = threading.Thread(target=poll, name="yzip-native-create-progress", daemon=True)
+        monitor.start()
+        try:
+            raw_status = int(self._library.yz_accel_create_zip(
+                str(runtime_7z), c_items, len(native_items), os.fspath(output_part),
+                level, threads, output_limit, ctypes.pointer(counters), cancellation.pointer,
+            ))
+        finally:
+            stop.set()
+            monitor.join()
+        if callback_error:
+            raise callback_error[0]
+        if progress is not None:
+            progress(int(counters.completed_bytes), total, "")
+        if cancel is not None and cancel():
+            raw_status = int(AccelStatus.CANCELLED)
+        try:
+            status = AccelStatus(raw_status)
+        except ValueError:
+            status = AccelStatus.ERROR
+        return NativeResult(status, int(counters.completed_bytes))
 
 
 class CancellationFlag:

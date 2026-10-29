@@ -41,6 +41,10 @@ class FakeLibrary:
         self.yz_accel_extract_zip = FakeFunction(
             lambda _dll, _source, _jobs, _count, _limit, _progress, _cancel: archive_accel.AccelStatus.OK
         )
+        self.yz_accel_create_zip = FakeFunction(
+            lambda _dll, _items, _count, _output, _level, _threads, _limit, _progress, _cancel:
+            archive_accel.AccelStatus.OK
+        )
 
 
 class LoaderTests(unittest.TestCase):

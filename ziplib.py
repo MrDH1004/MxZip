@@ -671,7 +671,8 @@ def create_zip(paths: Iterable[str], out_path: str, level: int = 6, password: Op
     tmp_out = out_path + ".partial"
     try:
         # multi-threaded; with a password the entries are WinZip AES-256 (legacy ZipCrypto is not offered)
-        zipwriter.write_zip(items, tmp_out, level, store_only, progress, cancel, password=password or None)
+        zipwriter.write_zip(items, tmp_out, level, store_only, progress, cancel,
+                            password=password or None, allow_native=not split_size)
         os.replace(tmp_out, out_path)
     except BaseException:
         if os.path.exists(tmp_out):

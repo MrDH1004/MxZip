@@ -20,6 +20,7 @@
 #include <vector>
 
 #pragma comment(lib, "Ole32.lib")
+#pragma comment(lib, "OleAut32.lib")
 
 namespace {
 thread_local std::wstring g_last_error;
@@ -62,6 +63,13 @@ private:
 
 void set_error(const wchar_t* message) {
     g_last_error = message == nullptr ? L"native ZIP extraction failed" : message;
+}
+
+void set_error_code(const wchar_t* message, HRESULT code, Int32 operation) {
+    wchar_t buffer[192]{};
+    _snwprintf_s(buffer, _countof(buffer), _TRUNCATE, L"%ls (HRESULT=0x%08X, operation=%d)",
+                 message, static_cast<unsigned>(code), static_cast<int>(operation));
+    g_last_error = buffer;
 }
 
 bool is_cancelled(const volatile std::uint32_t* flag) {
@@ -179,6 +187,226 @@ public:
 private:
     std::atomic<ULONG> refs_;
     HANDLE handle_;
+};
+
+class CreateOutStream final : public IOutStream {
+public:
+    CreateOutStream(const wchar_t* path, std::uint64_t limit) noexcept
+        : refs_(1), handle_(CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                       FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)),
+          io_failed_(false), position_(0), limit_(limit) {}
+    ~CreateOutStream() { if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_); }
+    bool valid() const noexcept { return handle_ != INVALID_HANDLE_VALUE; }
+    bool io_failed() const noexcept { return io_failed_; }
+    STDMETHOD(QueryInterface)(REFIID iid, void** object) noexcept override {
+        if (object == nullptr) return E_POINTER;
+        *object = nullptr;
+        if (iid == IID_IUnknown || iid == IID_ISequentialOutStream || iid == IID_IOutStream) {
+            *object = static_cast<IOutStream*>(this); AddRef(); return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+    STDMETHOD_(ULONG, AddRef)() noexcept override { return ++refs_; }
+    STDMETHOD_(ULONG, Release)() noexcept override {
+        const ULONG left = --refs_; if (left == 0) delete this; return left;
+    }
+    STDMETHOD(Write)(const void* data, UInt32 size, UInt32* processed) noexcept override {
+        if (processed == nullptr) return E_POINTER;
+        *processed = 0;
+        if (position_ > limit_ || size > limit_ - position_) {
+            io_failed_ = true; return HRESULT_FROM_WIN32(ERROR_DISK_FULL);
+        }
+        DWORD written = 0;
+        if (!WriteFile(handle_, data, size, &written, nullptr) || written != size) {
+            io_failed_ = true;
+            return HRESULT_FROM_WIN32(written == size ? GetLastError() : ERROR_WRITE_FAULT);
+        }
+        *processed = written;
+        position_ += written;
+        return S_OK;
+    }
+    STDMETHOD(Seek)(Int64 offset, UInt32 origin, UInt64* new_position) noexcept override {
+        LARGE_INTEGER distance{}; distance.QuadPart = offset;
+        LARGE_INTEGER position{};
+        if (!SetFilePointerEx(handle_, distance, &position, origin)) {
+            io_failed_ = true; return HRESULT_FROM_WIN32(GetLastError());
+        }
+        if (position.QuadPart < 0) return STG_E_INVALIDFUNCTION;
+        if (static_cast<std::uint64_t>(position.QuadPart) > limit_) {
+            io_failed_ = true; return HRESULT_FROM_WIN32(ERROR_DISK_FULL);
+        }
+        position_ = static_cast<std::uint64_t>(position.QuadPart);
+        if (new_position != nullptr) *new_position = static_cast<UInt64>(position.QuadPart);
+        return S_OK;
+    }
+    STDMETHOD(SetSize)(UInt64 size) noexcept override {
+        if (size > limit_) { io_failed_ = true; return HRESULT_FROM_WIN32(ERROR_DISK_FULL); }
+        LARGE_INTEGER distance{}; distance.QuadPart = static_cast<LONGLONG>(size);
+        if (!SetFilePointerEx(handle_, distance, nullptr, FILE_BEGIN) || !SetEndOfFile(handle_)) {
+            io_failed_ = true; return HRESULT_FROM_WIN32(GetLastError());
+        }
+        return S_OK;
+    }
+private:
+    std::atomic<ULONG> refs_;
+    HANDLE handle_;
+    bool io_failed_;
+    std::uint64_t position_;
+    std::uint64_t limit_;
+};
+
+bool source_matches(const yz_zip_create_item& item) noexcept {
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (item.source_path == nullptr || !GetFileAttributesExW(
+            item.source_path, GetFileExInfoStandard, &data)) return false;
+    const bool directory = (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    if (directory != (item.is_dir != 0)) return false;
+    if (!directory) {
+        const std::uint64_t size = (static_cast<std::uint64_t>(data.nFileSizeHigh) << 32) |
+                                   data.nFileSizeLow;
+        if (size != item.size) return false;
+    }
+    const std::uint64_t file_time = (static_cast<std::uint64_t>(data.ftLastWriteTime.dwHighDateTime) << 32) |
+                                    data.ftLastWriteTime.dwLowDateTime;
+    constexpr std::uint64_t epoch = 116444736000000000ULL;
+    const std::uint64_t expected = item.modified_ns < 0 ? 0 :
+        epoch + static_cast<std::uint64_t>(item.modified_ns) / 100ULL;
+    return file_time == expected;
+}
+
+class CreateInputStream final : public ISequentialInStream {
+public:
+    CreateInputStream(const yz_zip_create_item& item, yz_progress_counters* progress,
+                      volatile std::uint32_t* cancelled) noexcept
+        : refs_(1), handle_(CreateFileW(item.source_path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)),
+          expected_(item.size), read_(0), progress_(progress), cancelled_(cancelled) {}
+    ~CreateInputStream() { if (handle_ != INVALID_HANDLE_VALUE) CloseHandle(handle_); }
+    bool valid() const noexcept { return handle_ != INVALID_HANDLE_VALUE; }
+    bool complete() const noexcept { return read_ == expected_; }
+    STDMETHOD(QueryInterface)(REFIID iid, void** object) noexcept override {
+        if (object == nullptr) return E_POINTER;
+        *object = nullptr;
+        if (iid == IID_IUnknown || iid == IID_ISequentialInStream) {
+            *object = static_cast<ISequentialInStream*>(this); AddRef(); return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+    STDMETHOD_(ULONG, AddRef)() noexcept override { return ++refs_; }
+    STDMETHOD_(ULONG, Release)() noexcept override {
+        const ULONG left = --refs_; if (left == 0) delete this; return left;
+    }
+    STDMETHOD(Read)(void* data, UInt32 size, UInt32* processed) noexcept override {
+        if (processed == nullptr) return E_POINTER;
+        *processed = 0;
+        if (is_cancelled(cancelled_)) return E_ABORT;
+        DWORD got = 0;
+        if (!ReadFile(handle_, data, size, &got, nullptr)) return HRESULT_FROM_WIN32(GetLastError());
+        if (read_ > expected_ || got > expected_ - read_) return E_FAIL;
+        read_ += got;
+        InterlockedExchangeAdd64(reinterpret_cast<volatile LONG64*>(&progress_->completed_bytes), got);
+        *processed = got;
+        return S_OK;
+    }
+private:
+    std::atomic<ULONG> refs_;
+    HANDLE handle_;
+    std::uint64_t expected_;
+    std::uint64_t read_;
+    yz_progress_counters* progress_;
+    volatile std::uint32_t* cancelled_;
+};
+
+class CreateCallback final : public IArchiveUpdateCallback {
+public:
+    CreateCallback(const yz_zip_create_item* items, std::size_t count,
+                   yz_progress_counters* progress, volatile std::uint32_t* cancelled) noexcept
+        : refs_(1), items_(items), count_(count), progress_(progress), cancelled_(cancelled),
+          current_(nullptr), failed_(false), io_failed_(false), corrupt_(false) {}
+    ~CreateCallback() { release_current(); }
+    bool failed() const noexcept { return failed_; }
+    bool io_failed() const noexcept { return io_failed_; }
+    bool corrupt() const noexcept { return corrupt_; }
+    Int32 operation_result() const noexcept { return operation_result_; }
+    STDMETHOD(QueryInterface)(REFIID iid, void** object) noexcept override {
+        if (object == nullptr) return E_POINTER;
+        *object = nullptr;
+        if (iid == IID_IUnknown || iid == IID_IArchiveUpdateCallback) {
+            *object = static_cast<IArchiveUpdateCallback*>(this);
+        } else if (iid == IID_IProgress) {
+            *object = static_cast<IProgress*>(this);
+        } else return E_NOINTERFACE;
+        AddRef(); return S_OK;
+    }
+    STDMETHOD_(ULONG, AddRef)() noexcept override { return ++refs_; }
+    STDMETHOD_(ULONG, Release)() noexcept override {
+        const ULONG left = --refs_; if (left == 0) delete this; return left;
+    }
+    STDMETHOD(SetTotal)(UInt64 total) noexcept override {
+        progress_->total_bytes = total; return is_cancelled(cancelled_) ? E_ABORT : S_OK;
+    }
+    STDMETHOD(SetCompleted)(const UInt64*) noexcept override {
+        return is_cancelled(cancelled_) ? E_ABORT : S_OK;
+    }
+    STDMETHOD(GetUpdateItemInfo)(UInt32 index, Int32* new_data, Int32* new_props,
+                                 UInt32* archive_index) noexcept override {
+        if (index >= count_ || new_data == nullptr || new_props == nullptr || archive_index == nullptr)
+            return E_INVALIDARG;
+        *new_data = 1; *new_props = 1; *archive_index = static_cast<UInt32>(-1); return S_OK;
+    }
+    STDMETHOD(GetProperty)(UInt32 index, PROPID property, PROPVARIANT* value) noexcept override {
+        if (index >= count_ || value == nullptr) return E_INVALIDARG;
+        PropVariantInit(value);
+        const auto& item = items_[index];
+        try {
+            if (property == kpidPath) {
+                value->vt = VT_BSTR; value->bstrVal = SysAllocString(item.archive_name);
+                return value->bstrVal == nullptr ? E_OUTOFMEMORY : S_OK;
+            }
+            if (property == kpidIsDir) { value->vt = VT_BOOL; value->boolVal = item.is_dir ? VARIANT_TRUE : VARIANT_FALSE; }
+            else if (property == kpidSize) { value->vt = VT_UI8; value->uhVal.QuadPart = item.size; }
+            else if (property == kpidAttrib) { value->vt = VT_UI4; value->ulVal = item.attributes; }
+            else if (property == kpidMTime) {
+                constexpr std::uint64_t epoch = 116444736000000000ULL;
+                const std::uint64_t ticks = item.modified_ns < 0 ? epoch :
+                    epoch + static_cast<std::uint64_t>(item.modified_ns) / 100ULL;
+                value->vt = VT_FILETIME;
+                value->filetime.dwLowDateTime = static_cast<DWORD>(ticks);
+                value->filetime.dwHighDateTime = static_cast<DWORD>(ticks >> 32);
+            }
+            return S_OK;
+        } catch (...) { return E_OUTOFMEMORY; }
+    }
+    STDMETHOD(GetStream)(UInt32 index, ISequentialInStream** stream) noexcept override {
+        if (stream == nullptr || index >= count_) return E_INVALIDARG;
+        *stream = nullptr; release_current();
+        if (is_cancelled(cancelled_)) return E_ABORT;
+        const auto& item = items_[index];
+        if (!source_matches(item)) { corrupt_ = true; return E_FAIL; }
+        if (item.is_dir) return S_OK;
+        current_ = new (std::nothrow) CreateInputStream(item, progress_, cancelled_);
+        if (current_ == nullptr) return E_OUTOFMEMORY;
+        if (!current_->valid()) { io_failed_ = true; release_current(); return E_FAIL; }
+        current_->AddRef(); *stream = current_; return S_OK;
+    }
+    STDMETHOD(SetOperationResult)(Int32 result) noexcept override {
+        operation_result_ = result;
+        if (result != NArchive::NExtract::NOperationResult::kOK) failed_ = true;
+        release_current();
+        return failed_ ? E_FAIL : S_OK;
+    }
+private:
+    void release_current() noexcept { if (current_) { current_->Release(); current_ = nullptr; } }
+    std::atomic<ULONG> refs_;
+    const yz_zip_create_item* items_;
+    std::size_t count_;
+    yz_progress_counters* progress_;
+    volatile std::uint32_t* cancelled_;
+    CreateInputStream* current_;
+    bool failed_;
+    bool io_failed_;
+    bool corrupt_;
+    Int32 operation_result_ = -1;
 };
 
 class StagingOutStream final : public ISequentialOutStream {
@@ -500,7 +728,7 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_abi_version() noexcept {
 }
 
 std::uint64_t YZ_ACCEL_CALL yz_accel_capabilities() noexcept {
-    return YZ_ACCEL_CAP_ZIP_EXTRACT | YZ_ACCEL_CAP_7Z_EXTRACT;
+    return YZ_ACCEL_CAP_ZIP_EXTRACT | YZ_ACCEL_CAP_7Z_EXTRACT | YZ_ACCEL_CAP_ZIP_CREATE;
 }
 
 std::size_t YZ_ACCEL_CALL yz_accel_last_error(
@@ -520,6 +748,10 @@ std::size_t YZ_ACCEL_CALL yz_accel_last_error(
         }
         return 1;
     }
+}
+
+void YZ_ACCEL_CALL yz_accel_clear_error() noexcept {
+    g_last_error.clear();
 }
 
 void YZ_ACCEL_CALL yz_accel_cancel(
@@ -767,6 +999,120 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_extract_7z(
     if (inspected != YZ_ACCEL_OK) return inspected;
     return extract_archive(k7zClassId, seven_zip_dll, source, jobs, job_count,
                            output_limit, progress, cancellation_flag);
+}
+
+std::uint32_t YZ_ACCEL_CALL yz_accel_create_zip(
+    const wchar_t* seven_zip_dll, const yz_zip_create_item* items,
+    const std::size_t item_count, const wchar_t* output_part,
+    const std::uint32_t level, const std::uint32_t threads,
+    const std::uint64_t output_limit,
+    yz_progress_counters* progress, volatile std::uint32_t* cancellation_flag) noexcept {
+    g_last_error.clear();
+    if (seven_zip_dll == nullptr || items == nullptr || item_count == 0 ||
+        item_count > std::numeric_limits<UInt32>::max() || output_part == nullptr ||
+        progress == nullptr || level > 9 || threads == 0 || output_limit == 0) {
+        set_error(L"invalid native ZIP creation arguments");
+        return YZ_ACCEL_ERROR;
+    }
+    progress->completed_bytes = 0;
+    progress->total_bytes = 0;
+    for (std::size_t index = 0; index < item_count; ++index) {
+        if (items[index].source_path == nullptr || items[index].archive_name == nullptr ||
+            items[index].archive_name[0] == L'\0') {
+            set_error(L"invalid native ZIP item");
+            return YZ_ACCEL_ERROR;
+        }
+        if (!items[index].is_dir) {
+            if (progress->total_bytes > std::numeric_limits<std::uint64_t>::max() - items[index].size) {
+                set_error(L"native ZIP input size overflow");
+                return YZ_ACCEL_ERROR;
+            }
+            progress->total_bytes += items[index].size;
+        }
+    }
+    if (is_cancelled(cancellation_flag)) return YZ_ACCEL_CANCELLED;
+    HMODULE module = LoadLibraryExW(seven_zip_dll, nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    if (module == nullptr) {
+        set_error(L"could not load pinned 7z.dll");
+        return YZ_ACCEL_UNAVAILABLE;
+    }
+    IOutArchive* archive = nullptr;
+    ISetProperties* properties = nullptr;
+    CreateOutStream* output = nullptr;
+    CreateCallback* callback = nullptr;
+    std::uint32_t status = YZ_ACCEL_ERROR;
+    try {
+        auto create_object = reinterpret_cast<CreateObjectFunction>(GetProcAddress(module, "CreateObject"));
+        if (create_object == nullptr || create_object(&kZipClassId, &IID_IOutArchive,
+                reinterpret_cast<void**>(&archive)) != S_OK || archive == nullptr) {
+            set_error(L"7z.dll could not create the ZIP output handler");
+            status = YZ_ACCEL_UNAVAILABLE;
+        } else if (archive->QueryInterface(IID_ISetProperties,
+                       reinterpret_cast<void**>(&properties)) != S_OK || properties == nullptr) {
+            set_error(L"ZIP output handler does not support properties");
+            status = YZ_ACCEL_UNAVAILABLE;
+        } else {
+            const wchar_t* names[] = {L"x", L"mt", L"m"};
+            PROPVARIANT values[3]{};
+            for (auto& value : values) PropVariantInit(&value);
+            values[0].vt = VT_UI4; values[0].ulVal = level;
+            values[1].vt = VT_UI4; values[1].ulVal = threads;
+            // ZipHandlerOut.cpp accepts the numeric ZIP method for property "m":
+            // 0 = Store, 8 = Deflate.  This avoids the generic string-method parser.
+            values[2].vt = VT_UI4; values[2].ulVal = level == 0 ? 0U : 8U;
+            HRESULT result = properties->SetProperties(names, values, 3);
+            for (auto& value : values) PropVariantClear(&value);
+            if (result != S_OK) {
+                set_error(L"7z.dll rejected ZIP level or thread properties");
+            } else {
+                output = new (std::nothrow) CreateOutStream(output_part, output_limit);
+                callback = new (std::nothrow) CreateCallback(
+                    items, item_count, progress, cancellation_flag);
+                if (output == nullptr || callback == nullptr) {
+                    set_error(L"could not allocate native ZIP creation callbacks");
+                } else if (!output->valid()) {
+                    set_error(L"could not create native ZIP output part");
+                    status = YZ_ACCEL_IO_ERROR;
+                } else {
+                    result = archive->UpdateItems(output, static_cast<UInt32>(item_count), callback);
+                    bool changed = false;
+                    for (std::size_t index = 0; index < item_count; ++index) {
+                        if (!source_matches(items[index])) { changed = true; break; }
+                    }
+                    if (is_cancelled(cancellation_flag)) status = YZ_ACCEL_CANCELLED;
+                    else if (output->io_failed() || callback->io_failed()) {
+                        set_error(L"native ZIP creation I/O failed"); status = YZ_ACCEL_IO_ERROR;
+                    } else if (changed) {
+                        set_error(L"native ZIP input changed during creation"); status = YZ_ACCEL_CORRUPT;
+                    } else if (callback->corrupt()) {
+                        set_error(L"native ZIP input stream size mismatch"); status = YZ_ACCEL_CORRUPT;
+                    } else if (result != S_OK || callback->failed()) {
+                        set_error_code(L"7z.dll reported a ZIP creation error", result,
+                                       callback->operation_result());
+                        status = YZ_ACCEL_ERROR;
+                    } else status = YZ_ACCEL_OK;
+                }
+            }
+        }
+    } catch (...) {
+        set_error(L"unexpected exception in native ZIP creation");
+        status = YZ_ACCEL_ERROR;
+    }
+    if (callback != nullptr) callback->Release();
+    if (output != nullptr) output->Release();
+    if (properties != nullptr) properties->Release();
+    if (archive != nullptr) archive->Release();
+    if (status != YZ_ACCEL_OK) DeleteFileW(output_part);
+    if (!FreeLibrary(module)) {
+        g_last_metrics.free_library_error = GetLastError();
+        if (status == YZ_ACCEL_OK) {
+            set_error(L"7z.dll cleanup failed after ZIP creation");
+            DeleteFileW(output_part);
+            status = YZ_ACCEL_ERROR;
+        }
+    }
+    return status;
 }
 
 std::uint32_t YZ_ACCEL_CALL yz_accel_last_zip_metrics(
