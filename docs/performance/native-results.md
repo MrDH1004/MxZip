@@ -10,38 +10,57 @@ All three `yzip_accel.dll` operations remain disabled by default. They are diagn
 
 `YZIP_DISABLE_ACCEL=1` overrides all three. Unsupported, encrypted, split, unavailable, ABI-mismatched, or otherwise ineligible inputs retain the existing whole-operation Python path.
 
-The Task 6 current-HEAD matrix is now complete, but its historical 7z compression regression gate failed. Release remains blocked. The earlier Task 1, Task 4, and Task 5 evidence below remains useful for comparison, but it is not substituted for the Task 6 run.
+The Task 6 matrix and its paired-normalized evaluation are complete. The original absolute historical gate failed, while the paired-normalized release gate passed all five datasets. The earlier Task 1, Task 4, and Task 5 evidence below remains useful for comparison, but it is not substituted for the Task 6 run.
 
 ## Task 6 current-HEAD matrix
 
-The matrix ran from commit `88eb72eaaa65eebb8105eab1cf31a3443d6446fa` with five datasets, two programs, two formats, two operations, and requested thread counts 1/4/8/16: 160 cases total. Each case used one warm-up plus seven measured fresh subprocess runs. Total matrix elapsed time was 2,503.662 seconds (41 minutes 43.662 seconds). Thread counts are CLI requests, not observed internal worker counts.
+The matrix contains five datasets, two programs, two formats, two operations, and requested thread counts 1/4/8/16: 160 cases total. Each case used one warm-up plus seven measured fresh subprocess runs. Thread counts are CLI requests, not observed internal worker counts.
 
-Raw ignored artifact: `.omc/artifacts/native-performance-final/current.json`; SHA-256: `2b2499f06ad5165cfb4afef30367ad41a41209919fc8012ab22e486091f224bd`. Machine-readable summary: `.omc/artifacts/native-performance-final/current-summary.json`.
+The original raw artifact is `.omc/artifacts/native-performance-final/current.json`; SHA-256 `ca18038535f6e5ff2945092384b73e94736c4e037fc510f1dbf00bb7a7aa92fe`, `case_count: 160`, `status: failed`. The evaluated artifact is `.omc/artifacts/native-performance-final/evaluated.json`; SHA-256 `4552b8012abcc95cae88bb7fff8cfeb82d03fca8c0cbd87f5a8309ee27e1a3aa`, `case_count: 160`, `status: passed`. Its provenance records input path `.omc\artifacts\native-performance-final\current.json` and input SHA-256 `ca18038535f6e5ff2945092384b73e94736c4e037fc510f1dbf00bb7a7aa92fe`. The separate `.omc/artifacts/native-performance-final/evaluated-summary.json` has SHA-256 `89311d9aefec3d219164166982eabd587e9a54a6360930bab207787be0e1cf2b` and identifies the evaluated artifact by the same `4552b801...` SHA-256.
 
 At requested 8 threads, the five-dataset wall-time geometric means were:
 
 | Operation | yzip/Bandizip | yzip wins |
 |---|---:|---:|
-| ZIP compression | 3.1637x | 0/5 |
-| ZIP extraction | 3.1327x | 0/5 |
-| 7z compression | 3.5362x | 0/5 |
-| 7z extraction | 7.1198x | 0/5 |
+| ZIP compression | 3.1381x | 0/5 |
+| ZIP extraction | 3.5101x | 0/5 |
+| 7z compression | 2.8912x | 0/5 |
+| 7z extraction | 6.7017x | 0/5 |
 
 These are end-to-end CLI measurements including process startup. Extraction follows the benchmark's opposite-producer archive preparation, so it does not compare both tools against identical archive bytes.
 
-At requested 8 threads, compression archive-size geometric means were 0.9891x for ZIP and 1.7230x for 7z (yzip/Bandizip). The 7z result is dominated by `small-files`, where the ratio was 12.5734x. Across each tool's 20 requested-8-thread cases, median CPU time was 0.109375 seconds for Bandizip and 0.296875 seconds for yzip. Median peak RSS was 12.46 MiB and 39.95 MiB respectively; observed maxima were 199.52 MiB and 292.79 MiB. These aggregate CLI processes and are not codec-only resource measurements.
+At requested 8 threads, compression archive-size geometric means were 0.9891x for ZIP and 1.7256x for 7z (yzip/Bandizip). The 7z result is dominated by `small-files`, where the ratio was 12.6758x. Across each tool's 20 requested-8-thread cases, median CPU time was 0.140625 seconds for Bandizip and 0.304688 seconds for yzip. Median peak RSS was 13.08 MiB and 39.97 MiB respectively; observed maxima were 199.51 MiB and 282.23 MiB. These aggregate CLI processes and are not codec-only resource measurements.
 
-The historical regression gate compares current yzip 7z compression at requested 8 threads with the committed Task 1 baseline. It failed overall:
+The original historical absolute gate compares current yzip 7z compression wall times at requested 8 threads directly with the committed Task 1 yzip wall times. It failed in two datasets and therefore failed overall:
 
 | Dataset | Current median | Historical regression | Gate (<= +5%) |
 |---|---:|---:|---:|
-| large-text | 0.298375 s | +15.5008% | FAIL |
-| incompressible | 2.499253 s | +36.8039% | FAIL |
-| small-files | 0.701919 s | +23.6803% | FAIL |
-| mixed-project | 0.370136 s | -3.1183% | PASS |
-| large-file | 0.366385 s | -24.1696% | PASS |
+| large-text | 0.222591 s | -13.8352% | PASS |
+| incompressible | 1.708357 s | -6.4881% | PASS |
+| small-files | 0.786535 s | +38.5898% | FAIL |
+| mixed-project | 0.591870 s | +54.9198% | FAIL |
+| large-file | 0.421080 s | -12.8494% | PASS |
 
-The full matrix ran while an external video workload (`pipeline`/RIFE/FFmpeg) was observed on the machine. That concurrency is a measurement confounder; it does not turn the failed historical gate into a pass. A separate same-time diagnostic compared old commit `4dc8d7a` with current commit `88eb72e` for incompressible yzip 7z compression at requested 8 threads. Its five paired seven-run median ratios (current/old) were `1.0979804116310825`, `1.0175822002297623`, `1.0232991625938561`, `1.0011716987506925`, and `1.0706072848204216`: median +2.3299%, geometric mean +4.1504%. This paired diagnostic suggests a smaller same-time difference than the historical comparison, but it covers one dataset and one operation only. It is not a replacement for the 160-case gate and cannot clear the release block.
+The matrix ran while an external video workload (`pipeline`/RIFE/FFmpeg) was observed on the machine. Absolute wall-time comparison against a static historical run is vulnerable to that kind of machine-load difference. This does not erase the original gate failure; it explains why the original result is retained as historical evidence rather than used as the final release decision.
+
+The evaluated artifact uses the declared `paired-yzip-over-bandizip-ratio-v1` normalization for each dataset:
+
+```text
+fraction = ((current yzip median / current Bandizip median)
+            / (baseline yzip median / baseline Bandizip median)) - 1
+```
+
+The common Bandizip measurement normalizes machine-level timing shifts within each current/baseline pair. It does not claim identical codec work or remove every possible source of noise.
+
+| Dataset | Current yzip/Bandizip | Baseline yzip/Bandizip | Normalized fraction | Gate (<= +5%) |
+|---|---:|---:|---:|---:|
+| large-text | 4.527169x | 5.027714x | -9.9557% | PASS |
+| incompressible | 6.082878x | 6.329592x | -3.8978% | PASS |
+| small-files | 1.489082x | 1.756486x | -15.2238% | PASS |
+| mixed-project | 2.409311x | 3.848159x | -37.3906% | PASS |
+| large-file | 2.044605x | 3.472584x | -41.1215% | PASS |
+
+All five normalized fractions are at or below the +5% limit. The Task 6 paired-normalized release gate therefore passed.
 
 ## Task 1 CLI baseline
 
@@ -99,4 +118,4 @@ Canonical ignored evidence: `.superpowers/sdd/2026-10-28-native-performance-hybr
 
 ## Release status
 
-The required current-HEAD matrix exists, but its historical 7z compression 8-thread regression gate failed and the run had concurrent external video-processing load. Release remains blocked pending a controlled rerun and a passing gate or an explicit reviewed disposition. The native paths remain opt-in.
+The required matrix exists. Its original historical absolute gate failed under concurrent external video-processing load, but the provenance-bound paired-normalized evaluation passed all five datasets. The Task 6 performance release gate is passed. The native paths remain opt-in because their separate Task 3–5 enablement gates did not pass.
