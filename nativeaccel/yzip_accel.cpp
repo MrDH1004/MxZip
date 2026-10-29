@@ -19,6 +19,8 @@
 #include <unordered_map>
 #include <vector>
 
+#pragma comment(lib, "Ole32.lib")
+
 namespace {
 thread_local std::wstring g_last_error;
 thread_local yz_zip_metrics g_last_metrics{};
@@ -30,6 +32,9 @@ const GUID kZipClassId = {
     0x40C1,
     0x278A,
     {0x10, 0x00, 0x00, 0x01, 0x10, 0x01, 0x00, 0x00},
+};
+const GUID k7zClassId = {
+    0x23170F69, 0x40C1, 0x278A, {0x10, 0x00, 0x00, 0x01, 0x10, 0x07, 0x00, 0x00},
 };
 
 using CreateObjectFunction = HRESULT(WINAPI*)(const GUID*, const GUID*, void**);
@@ -66,6 +71,13 @@ bool is_cancelled(const volatile std::uint32_t* flag) {
     auto* value = reinterpret_cast<volatile LONG*>(
         const_cast<volatile std::uint32_t*>(flag));
     return InterlockedCompareExchange(value, 0L, 0L) != 0;
+}
+
+bool is_plain_lzma_method(const wchar_t* method) noexcept {
+    if (method == nullptr) return false;
+    const bool prefix = wcscmp(method, L"LZMA") == 0 || wcscmp(method, L"LZMA2") == 0 ||
+                        wcsncmp(method, L"LZMA:", 5) == 0 || wcsncmp(method, L"LZMA2:", 6) == 0;
+    return prefix && wcschr(method, L' ') == nullptr && wcschr(method, L'+') == nullptr;
 }
 
 enum class TestWriteFault {
@@ -475,6 +487,7 @@ private:
     yz_zip_metrics* metrics_;
     std::unordered_map<UInt32, const yz_zip_job*> lookup_;
 };
+
 }  // namespace
 
 std::uint32_t YZ_ACCEL_CALL yz_accel_abi_version() noexcept {
@@ -482,7 +495,7 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_abi_version() noexcept {
 }
 
 std::uint64_t YZ_ACCEL_CALL yz_accel_capabilities() noexcept {
-    return YZ_ACCEL_CAP_ZIP_EXTRACT;
+    return YZ_ACCEL_CAP_ZIP_EXTRACT | YZ_ACCEL_CAP_7Z_EXTRACT;
 }
 
 std::size_t YZ_ACCEL_CALL yz_accel_last_error(
@@ -513,7 +526,8 @@ void YZ_ACCEL_CALL yz_accel_cancel(
     InterlockedExchange(target, 1L);
 }
 
-std::uint32_t YZ_ACCEL_CALL yz_accel_extract_zip(
+static std::uint32_t extract_archive(
+    const GUID& class_id,
     const wchar_t* seven_zip_dll,
     const wchar_t* source,
     const yz_zip_job* jobs,
@@ -556,7 +570,7 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_extract_zip(
         } else {
             IInArchive* archive = nullptr;
             HRESULT result = create_object(
-                &kZipClassId, &IID_IInArchive, reinterpret_cast<void**>(&archive));
+                &class_id, &IID_IInArchive, reinterpret_cast<void**>(&archive));
             if (result != S_OK || archive == nullptr) {
                 set_error(L"7z.dll could not create the ZIP handler");
                 status = YZ_ACCEL_UNAVAILABLE;
@@ -625,6 +639,106 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_extract_zip(
         }
     }
     return status;
+}
+
+std::uint32_t YZ_ACCEL_CALL yz_accel_extract_zip(
+    const wchar_t* seven_zip_dll, const wchar_t* source, const yz_zip_job* jobs,
+    const std::size_t job_count, const std::uint64_t output_limit,
+    yz_progress_counters* progress, volatile std::uint32_t* cancellation_flag) noexcept {
+    return extract_archive(kZipClassId, seven_zip_dll, source, jobs, job_count,
+                           output_limit, progress, cancellation_flag);
+}
+
+std::uint32_t YZ_ACCEL_CALL yz_accel_inspect_7z(
+    const wchar_t* seven_zip_dll, const wchar_t* source, yz_archive_info* info) noexcept {
+    g_last_error.clear();
+    if (seven_zip_dll == nullptr || source == nullptr || info == nullptr) return YZ_ACCEL_ERROR;
+    *info = {};
+    HMODULE module = LoadLibraryExW(seven_zip_dll, nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+    if (module == nullptr) return YZ_ACCEL_UNAVAILABLE;
+    std::uint32_t status = YZ_ACCEL_ERROR;
+    IInArchive* archive = nullptr;
+    InFileStream* input = nullptr;
+    try {
+      auto create_object = reinterpret_cast<CreateObjectFunction>(GetProcAddress(module, "CreateObject"));
+      if (create_object == nullptr || create_object(&k7zClassId, &IID_IInArchive,
+            reinterpret_cast<void**>(&archive)) != S_OK || archive == nullptr) {
+        status = YZ_ACCEL_UNAVAILABLE;
+    } else {
+        input = new (std::nothrow) InFileStream(source);
+        if (input != nullptr && input->valid() && archive->Open(input, nullptr, nullptr) == S_OK) {
+            UInt32 count = 0;
+            if (archive->GetNumberOfItems(&count) == S_OK) {
+                info->item_count = count;
+                bool encrypted = false;
+                bool unsupported = false;
+                PROPVARIANT archive_method{};
+                PropVariantInit(&archive_method);
+                if (archive->GetArchiveProperty(kpidMethod, &archive_method) == S_OK &&
+                    archive_method.vt == VT_BSTR) {
+                    if (!is_plain_lzma_method(archive_method.bstrVal)) {
+                        unsupported = true;
+                    }
+                } else {
+                    unsupported = true;
+                }
+                PropVariantClear(&archive_method);
+                PROPVARIANT archive_encrypted{};
+                PropVariantInit(&archive_encrypted);
+                if (archive->GetArchiveProperty(kpidEncrypted, &archive_encrypted) == S_OK &&
+                    archive_encrypted.vt == VT_BOOL && archive_encrypted.boolVal != VARIANT_FALSE) encrypted = true;
+                PropVariantClear(&archive_encrypted);
+                for (UInt32 i = 0; i < count; ++i) {
+                    PROPVARIANT value{};
+                    PropVariantInit(&value);
+                    if (archive->GetProperty(i, kpidEncrypted, &value) == S_OK &&
+                        value.vt == VT_BOOL && value.boolVal != VARIANT_FALSE) encrypted = true;
+                    PropVariantClear(&value);
+                    PropVariantInit(&value);
+                    if (archive->GetProperty(i, kpidSymLink, &value) == S_OK &&
+                        value.vt == VT_BOOL && value.boolVal != VARIANT_FALSE) unsupported = true;
+                    PropVariantClear(&value);
+                    PropVariantInit(&value);
+                    if (archive->GetProperty(i, kpidMethod, &value) == S_OK && value.vt == VT_BSTR) {
+                        if (!is_plain_lzma_method(value.bstrVal)) {
+                            unsupported = true;
+                        }
+                    }
+                    PropVariantClear(&value);
+                }
+                PROPVARIANT solid{};
+                PropVariantInit(&solid);
+                if (archive->GetArchiveProperty(kpidSolid, &solid) == S_OK &&
+                    solid.vt == VT_BOOL && solid.boolVal != VARIANT_FALSE) info->flags |= YZ_ARCHIVE_SOLID;
+                PropVariantClear(&solid);
+                if (encrypted) info->flags |= YZ_ARCHIVE_ENCRYPTED;
+                if (!encrypted && !unsupported) info->flags |= YZ_ARCHIVE_SUPPORTED;
+                status = (info->flags & YZ_ARCHIVE_SUPPORTED) ? YZ_ACCEL_OK : YZ_ACCEL_UNSUPPORTED;
+            }
+            archive->Close();
+        } else {
+            status = YZ_ACCEL_CORRUPT;
+        }
+      }
+    } catch (...) {
+        status = YZ_ACCEL_ERROR;
+    }
+    if (input != nullptr) input->Release();
+    if (archive != nullptr) archive->Release();
+    FreeLibrary(module);
+    return status;
+}
+
+std::uint32_t YZ_ACCEL_CALL yz_accel_extract_7z(
+    const wchar_t* seven_zip_dll, const wchar_t* source, const yz_zip_job* jobs,
+    const std::size_t job_count, const std::uint64_t output_limit,
+    yz_progress_counters* progress, volatile std::uint32_t* cancellation_flag) noexcept {
+    yz_archive_info info{};
+    const std::uint32_t inspected = yz_accel_inspect_7z(seven_zip_dll, source, &info);
+    if (inspected != YZ_ACCEL_OK) return inspected;
+    return extract_archive(k7zClassId, seven_zip_dll, source, jobs, job_count,
+                           output_limit, progress, cancellation_flag);
 }
 
 std::uint32_t YZ_ACCEL_CALL yz_accel_last_zip_metrics(

@@ -123,7 +123,8 @@ class BuiltBridgeTests(unittest.TestCase):
             self.skipTest("nativeaccel/build.ps1 has not run")
         accelerator = archive_accel.load_accelerator(dll)
         self.assertIsNotNone(accelerator, archive_accel.disabled_reason())
-        self.assertEqual(archive_accel.CAP_ZIP_EXTRACT, accelerator.capabilities)
+        self.assertTrue(accelerator.capabilities & archive_accel.CAP_ZIP_EXTRACT)
+        self.assertTrue(accelerator.capabilities & archive_accel.CAP_7Z_EXTRACT)
         self.assertEqual("", accelerator.last_error())
 
 

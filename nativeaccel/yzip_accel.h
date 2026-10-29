@@ -12,6 +12,7 @@
 
 #define YZ_ACCEL_ABI_VERSION 1U
 #define YZ_ACCEL_CAP_ZIP_EXTRACT (1ULL << 0)
+#define YZ_ACCEL_CAP_7Z_EXTRACT (1ULL << 1)
 
 enum yz_accel_status : std::uint32_t {
     YZ_ACCEL_OK = 0,
@@ -35,6 +36,15 @@ struct yz_progress_counters {
     std::uint64_t total_bytes;
 };
 
+struct yz_archive_info {
+    std::uint32_t item_count;
+    std::uint32_t flags;
+};
+
+#define YZ_ARCHIVE_SUPPORTED 1U
+#define YZ_ARCHIVE_ENCRYPTED 2U
+#define YZ_ARCHIVE_SOLID 4U
+
 struct yz_zip_metrics {
     std::uint64_t callback_calls;
     std::uint64_t lookup_calls;
@@ -56,6 +66,18 @@ YZ_ACCEL_EXPORT std::size_t YZ_ACCEL_CALL yz_accel_last_error(
 YZ_ACCEL_EXPORT void YZ_ACCEL_CALL yz_accel_cancel(
     volatile std::uint32_t* cancellation_flag) noexcept;
 YZ_ACCEL_EXPORT std::uint32_t YZ_ACCEL_CALL yz_accel_extract_zip(
+    const wchar_t* seven_zip_dll,
+    const wchar_t* source,
+    const yz_zip_job* jobs,
+    std::size_t job_count,
+    std::uint64_t output_limit,
+    yz_progress_counters* progress,
+    volatile std::uint32_t* cancellation_flag) noexcept;
+YZ_ACCEL_EXPORT std::uint32_t YZ_ACCEL_CALL yz_accel_inspect_7z(
+    const wchar_t* seven_zip_dll,
+    const wchar_t* source,
+    yz_archive_info* info) noexcept;
+YZ_ACCEL_EXPORT std::uint32_t YZ_ACCEL_CALL yz_accel_extract_7z(
     const wchar_t* seven_zip_dll,
     const wchar_t* source,
     const yz_zip_job* jobs,

@@ -18,13 +18,18 @@ import re
 import tarfile
 import threading
 import time
+import warnings
 import zipfile
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
 
 import lzmamt
 import ziplib
+from archive_accel import (
+    AccelStatus, CAP_7Z_EXTRACT, Native7zJob, load_accelerator,
+)
 from ziplib import BadPassword, Cancelled, Entry
 
 try:
@@ -635,7 +640,25 @@ class SevenZArchive(_Base):
                 raise BadPassword(str(e))
             raise
 
+    def _native_metadata_eligible(self) -> bool:
+        seen = set()
+        for fi in self.infos:
+            if getattr(fi, "is_symlink", False) or not (fi.is_file or fi.is_directory):
+                return False
+            name = self._name(fi).lower()
+            if name in seen:
+                return False
+            seen.add(name)
+        return True
+
     def extract(self, dest, names=None, progress=None, cancel=None, overwrite=True):
+        if (os.environ.get("YZIP_NATIVE_7Z_EXTRACT") == "1" and not self.need and
+                self.joined is None and self._native_metadata_eligible()):
+            accelerator = load_accelerator()
+            if accelerator is not None and accelerator.capabilities & CAP_7Z_EXTRACT:
+                inspected = accelerator.inspect_7z(self.path)
+                if inspected.supported and self._extract_native(accelerator, dest, names, progress, cancel, overwrite):
+                    return
         from py7zr.io import NullIO, Py7zIO, WriterFactory
         wanted = None if names is None else set(names)
         plan = _Planner(dest, overwrite, self.path)
@@ -817,6 +840,144 @@ class SevenZArchive(_Base):
                     os.utime(t, (ts, ts))
                 except (OverflowError, ValueError, OSError):
                     pass
+
+    def _extract_native(self, accelerator, dest, names, progress, cancel, overwrite):
+        wanted = None if names is None else set(names)
+        plan = _Planner(dest, overwrite, self.path)
+        planned = []
+        planned_dirs = []
+        total = 0
+        for index, fi in enumerate(self.infos):
+            name = self._name(fi)
+            if wanted is not None and name not in wanted:
+                continue
+            if fi.is_directory:
+                target_dir = ziplib.safe_target(plan.root, fi.filename)
+                if target_dir is not None:
+                    planned_dirs.append(target_dir)
+                continue
+            target = plan.target(fi.filename, False)
+            if target is None:
+                continue
+            size = int(fi.uncompressed or 0)
+            planned.append((index, fi, target, os.path.exists(target)))
+            total += size
+        if not planned:
+            return False
+        jobs = [Native7zJob(index, ziplib.part_path(target), int(fi.uncompressed or 0), int(fi.crc32 or 0))
+                for index, fi, target, _existed in planned]
+        staged = {job.staging_path for job in jobs}
+        created_dirs = []
+        succeeded = False
+
+        def ensure_dir(path):
+            missing = []
+            current = path
+            while current and not os.path.exists(current):
+                missing.append(current)
+                parent = os.path.dirname(current)
+                if parent == current:
+                    break
+                current = parent
+            os.makedirs(path, exist_ok=True)
+            created_dirs.extend(reversed(missing))
+
+        def verify(job, fi):
+            if cancel and cancel():
+                raise Cancelled()
+            size = 0
+            crc = 0
+            with open(job.staging_path, "rb") as source:
+                while block := source.read(1 << 20):
+                    if cancel and cancel():
+                        raise Cancelled()
+                    size += len(block)
+                    if size > job.expected_size:
+                        raise ValueError("native 7z output exceeded declared size")
+                    crc = zlib.crc32(block, crc)
+            if size != job.expected_size or crc != job.expected_crc:
+                raise ValueError(f"native 7z validation failed for {fi.filename}")
+
+        try:
+            for job in jobs:
+                ensure_dir(os.path.dirname(job.staging_path))
+            for target_dir in planned_dirs:
+                ensure_dir(target_dir)
+            result = accelerator.extract_7z(self.path, jobs, progress, cancel)
+            wrote = any(os.path.exists(path) for path in staged)
+            if result.status in (AccelStatus.UNAVAILABLE, AccelStatus.UNSUPPORTED) and not wrote:
+                return False
+            if result.status == AccelStatus.CANCELLED:
+                raise Cancelled()
+            if result.status == AccelStatus.CORRUPT:
+                raise ValueError("native 7z archive is corrupt")
+            if result.status == AccelStatus.IO_ERROR:
+                raise OSError(accelerator.last_error() or "native 7z staging I/O failed")
+            if result.status != AccelStatus.OK:
+                raise RuntimeError(f"native 7z extraction failed with status {result.status.name}")
+            workers = max(1, min(runtimeconfig.worker_count(8), len(jobs)))
+            with ThreadPoolExecutor(workers) as pool:
+                list(pool.map(lambda pair: verify(*pair), zip(jobs, (p[1] for p in planned))))
+            if cancel and cancel():
+                raise Cancelled()
+            published = []
+            backups = []
+            try:
+                for job, (_index, fi, target, existed) in zip(jobs, planned):
+                    if cancel and cancel():
+                        raise Cancelled()
+                    if existed:
+                        backup = ziplib.part_path(target) + ".native-7z-backup"
+                        os.replace(target, backup)
+                        backups.append((backup, target))
+                    ziplib.finish_part(job.staging_path, target)
+                    staged.discard(job.staging_path)
+                    published.append(target)
+                    if fi.creationtime:
+                        _set_mtime(target, fi.creationtime.timestamp())
+            except BaseException as publish_error:
+                rollback_failures = []
+                for target in reversed(published):
+                    try:
+                        os.remove(target)
+                    except FileNotFoundError:
+                        pass
+                    except OSError as error:
+                        rollback_failures.append(f"remove {target}: {error}")
+                for backup, target in reversed(backups):
+                    try:
+                        os.replace(backup, target)
+                    except OSError as error:
+                        rollback_failures.append(f"restore {backup} -> {target}: {error}")
+                if rollback_failures:
+                    recoverable = [backup for backup, _target in backups if os.path.exists(backup)]
+                    raise ziplib.NativeRollbackError(
+                        publish_error, rollback_failures, recoverable
+                    ) from publish_error
+                raise
+            for backup, _target in backups:
+                try:
+                    os.remove(backup)
+                except OSError as error:
+                    warnings.warn(
+                        f"native 7z backup cleanup failed; recoverable backup kept at {backup}: {error}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+            succeeded = True
+            return True
+        finally:
+            for path in staged:
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    pass
+            if not succeeded:
+                for directory in reversed(created_dirs):
+                    try:
+                        os.rmdir(directory)
+                    except OSError:
+                        pass
 
     def test(self, progress=None, cancel=None) -> list[str]:
         if progress:

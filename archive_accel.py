@@ -16,6 +16,7 @@ from typing import Callable, Iterable
 
 ABI_VERSION = 1
 CAP_ZIP_EXTRACT = 1 << 0
+CAP_7Z_EXTRACT = 1 << 1
 
 
 class AccelStatus(enum.IntEnum):
@@ -34,6 +35,22 @@ class NativeZipJob:
     staging_path: str
     expected_size: int
     expected_crc: int
+
+
+@dataclass(frozen=True)
+class Native7zJob:
+    source_index: int
+    staging_path: str
+    expected_size: int
+    expected_crc: int
+
+
+@dataclass(frozen=True)
+class NativeArchiveInfo:
+    supported: bool
+    encrypted: bool
+    solid: bool
+    item_count: int
 
 
 @dataclass(frozen=True)
@@ -70,6 +87,13 @@ class _CNativeProgress(ctypes.Structure):
     _fields_ = [
         ("completed_bytes", ctypes.c_uint64),
         ("total_bytes", ctypes.c_uint64),
+    ]
+
+
+class _CNativeArchiveInfo(ctypes.Structure):
+    _fields_ = [
+        ("item_count", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
     ]
 
 
@@ -120,6 +144,22 @@ class Accelerator:
                 ctypes.POINTER(ctypes.c_uint32),
             ]
             extract_zip.restype = ctypes.c_uint32
+        inspect_7z = getattr(library, "yz_accel_inspect_7z", None)
+        extract_7z = getattr(library, "yz_accel_extract_7z", None)
+        if self.capabilities & CAP_7Z_EXTRACT:
+            if inspect_7z is None:
+                raise AttributeError("missing required export: yz_accel_inspect_7z")
+            if extract_7z is None:
+                raise AttributeError("missing required export: yz_accel_extract_7z")
+        if inspect_7z is not None:
+            inspect_7z.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.POINTER(_CNativeArchiveInfo)]
+            inspect_7z.restype = ctypes.c_uint32
+        if extract_7z is not None:
+            extract_7z.argtypes = extract_zip.argtypes if extract_zip is not None else [
+                ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.POINTER(_CNativeZipJob), ctypes.c_size_t,
+                ctypes.c_uint64, ctypes.POINTER(_CNativeProgress), ctypes.POINTER(ctypes.c_uint32),
+            ]
+            extract_7z.restype = ctypes.c_uint32
         metrics = getattr(library, "yz_accel_last_zip_metrics", None)
         if metrics is not None:
             metrics.argtypes = [ctypes.POINTER(_CNativeMetrics)]
@@ -140,8 +180,9 @@ class Accelerator:
             return ""
         return buffer.value
 
-    def extract_zip(
+    def _extract_native(
         self,
+        native_function,
         source: os.PathLike[str] | str,
         jobs: Iterable[NativeZipJob],
         progress: Callable[[int, int, str], None] | None,
@@ -166,6 +207,8 @@ class Accelerator:
         total = sum(job.expected_size for job in native_jobs)
         counters = _CNativeProgress(0, total)
         cancellation = CancellationFlag(self)
+        if cancel is not None and cancel():
+            cancellation.cancel()
         stop = threading.Event()
         callback_error: list[BaseException] = []
 
@@ -185,7 +228,7 @@ class Accelerator:
         monitor.start()
         try:
             raw_status = int(
-                self._library.yz_accel_extract_zip(
+                native_function(
                     str(runtime_7z),
                     os.fspath(source),
                     c_jobs,
@@ -219,6 +262,24 @@ class Accelerator:
                     for name, _ctype in _CNativeMetrics._fields_
                 ))
         return NativeResult(status, int(counters.completed_bytes), metrics)
+
+    def extract_zip(self, source, jobs, progress, cancel) -> NativeResult:
+        return self._extract_native(self._library.yz_accel_extract_zip, source, jobs, progress, cancel)
+
+    def inspect_7z(self, source: os.PathLike[str] | str) -> NativeArchiveInfo:
+        runtime_7z = _validated_7z_path()
+        if runtime_7z is None:
+            return NativeArchiveInfo(False, False, False, 0)
+        info = _CNativeArchiveInfo()
+        status = AccelStatus(int(self._library.yz_accel_inspect_7z(
+            str(runtime_7z), os.fspath(source), ctypes.pointer(info)
+        )))
+        if status not in (AccelStatus.OK, AccelStatus.UNSUPPORTED):
+            return NativeArchiveInfo(False, bool(info.flags & 2), bool(info.flags & 4), int(info.item_count))
+        return NativeArchiveInfo(bool(info.flags & 1), bool(info.flags & 2), bool(info.flags & 4), int(info.item_count))
+
+    def extract_7z(self, source, jobs, progress, cancel) -> NativeResult:
+        return self._extract_native(self._library.yz_accel_extract_7z, source, jobs, progress, cancel)
 
 
 class CancellationFlag:
