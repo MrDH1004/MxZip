@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import tempfile
 import threading
@@ -354,3 +355,195 @@ def quick_compress(paths: list[str], out: str) -> Job:
     reveal = os.path.dirname(os.path.abspath(target)) if len(targets) > 1 else target
     return Job(run, f"압축하기 {os.path.basename(target)}",
                reveal, "압축 작업을 완료했습니다.")
+
+
+def _claim_shell_mutex(name: str):
+    """Return the new Windows named-mutex handle, or None when another collector owns it."""
+    import ctypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateMutexW.restype = ctypes.c_void_p
+    handle = kernel.CreateMutexW(None, False, name)
+    if not handle:
+        return None
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        kernel.CloseHandle(ctypes.c_void_p(handle))
+        return None
+    return handle
+
+
+def _release_shell_mutex(handle) -> None:
+    if handle:
+        import ctypes
+
+        ctypes.WinDLL("kernel32").CloseHandle(ctypes.c_void_p(handle))
+
+
+def gather_shell_paths(verb: str, paths: list[str], first_wait_ms: int = 1500,
+                       quiet_ms: int = 1000, max_ms: int = 10000) -> list[str] | None:
+    """Coalesce Explorer's one-process-per-item fallback without importing Qt.
+
+    The first process owns a named mutex and pipe. Later processes forward their paths and return None.
+    """
+    if os.name != "nt":
+        return list(paths)
+    import getpass
+    from multiprocessing.connection import Client, Listener
+
+    scale = float(os.environ.get("YZIP_GATHER_SCALE", "1"))
+    first_wait = first_wait_ms * scale / 1000
+    quiet = quiet_ms * scale / 1000
+    maximum = max_ms * scale / 1000
+    name = f"yzip-{verb}-{getpass.getuser()}"
+    address = rf"\\.\pipe\{name}"
+
+    def forward() -> bool:
+        try:
+            connection = Client(address, family="AF_PIPE", authkey=None)
+        except OSError:
+            return False
+        try:
+            connection.send(list(paths))
+            return connection.recv() is True
+        except (EOFError, OSError):
+            return False
+        finally:
+            connection.close()
+
+    mutex = None
+    for _ in range(60):
+        if forward():
+            return None
+        mutex = _claim_shell_mutex("Local\\" + name)
+        if mutex:
+            break
+        time.sleep(0.1)
+    if not mutex:
+        return list(paths)
+
+    listener = None
+    incoming: queue.Queue = queue.Queue()
+    stop = threading.Event()
+    try:
+        listener = Listener(address, family="AF_PIPE", authkey=None)
+
+        def accept_connections() -> None:
+            while not stop.is_set():
+                try:
+                    connection = listener.accept()
+                except (EOFError, OSError):
+                    return
+                handed_off = False
+                try:
+                    received = connection.recv()
+                    if isinstance(received, list) and all(isinstance(path, str) for path in received):
+                        # The sender may exit only after the collector's main loop incorporated these paths.
+                        # Hand the live connection over with the payload so its ACK cannot race collector shutdown.
+                        incoming.put((received, connection))
+                        handed_off = True
+                except (EOFError, OSError, ValueError):
+                    pass
+                finally:
+                    if not handed_off:
+                        connection.close()
+
+        threading.Thread(target=accept_connections, daemon=True).start()
+        collected = list(paths)
+        began = last = time.monotonic()
+
+        def incorporate(item) -> None:
+            received, connection = item
+            collected.extend(received)
+            try:
+                connection.send(True)
+            finally:
+                connection.close()
+
+        while time.monotonic() - began < maximum:
+            try:
+                incorporate(incoming.get(timeout=0.02))
+                last = time.monotonic()
+            except queue.Empty:
+                pass
+            now = time.monotonic()
+            if now - began >= first_wait and now - last >= quiet:
+                break
+        while True:
+            try:
+                incorporate(incoming.get_nowait())
+            except queue.Empty:
+                break
+        return sorted(set(collected), key=str.lower)
+    finally:
+        stop.set()
+        if listener is not None:
+            listener.close()
+        _release_shell_mutex(mutex)
+
+
+def _unique_archive_path(path: str, reserved: set[str] | None = None) -> str:
+    reserved = reserved or set()
+    normalized = os.path.normcase(os.path.abspath(path))
+    if not os.path.exists(path) and normalized not in reserved:
+        return path
+    base, extension = os.path.splitext(path)
+    index = 2
+    while True:
+        candidate = f"{base} ({index}){extension}"
+        if not os.path.exists(candidate) and os.path.normcase(os.path.abspath(candidate)) not in reserved:
+            return candidate
+        index += 1
+
+
+def shell_archive(paths: list[str], progress=None, cancel=None) -> list[str]:
+    """Run the noninteractive Explorer archive action through the regular format backend, without Qt."""
+    if not paths:
+        raise ValueError("No files selected")
+    settings = apply_runtime_settings(strict=False)
+    separate = settings["shell_multi"] == "separate" and len(paths) > 1
+    groups = [[path] for path in paths] if separate else [list(paths)]
+    targets = []
+    reserved: set[str] = set()
+    for group in groups:
+        first = os.path.abspath(group[0])
+        one_file = len(group) == 1 and os.path.isfile(first)
+        fmt = formats.BY_ID[settings["compress_format"]]
+        if fmt.single and not one_file:
+            fmt = formats.BY_ID["zip"]
+        if len(group) > 1:
+            parent = os.path.dirname(first)
+            base = os.path.join(parent, os.path.basename(parent) or "archive")
+        elif fmt.single and one_file:
+            base = first
+        else:
+            base = first if os.path.isdir(first) else os.path.splitext(first)[0]
+        target = base + fmt.ext
+        if settings["compress_dir"]:
+            target = os.path.join(settings["compress_dir"], os.path.basename(target))
+        target = _unique_archive_path(target, reserved)
+        reserved.add(os.path.normcase(os.path.abspath(target)))
+        targets.append((group, target, fmt))
+
+    progress = progress or (lambda _done, _total, _name: None)
+    cancel = cancel or (lambda: False)
+    outputs = []
+    for group, target, fmt in targets:
+        if cancel():
+            raise ziplib.Cancelled()
+        os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
+        outputs.extend(formats.create(
+            fmt.id,
+            group,
+            target,
+            level=max(1, settings["compress_level"]),
+            store_only=settings["compress_level"] == 0,
+            password=None,
+            split_size=split_bytes(settings["compress_split"]) if fmt.split else 0,
+            exclude=[".tmp", "Thumbs.db", ".DS_Store"],
+            progress=progress,
+            cancel=cancel,
+        ))
+    if settings["compress_open_folder"] and not os.environ.get("YZIP_NO_OPEN"):
+        for folder in dict.fromkeys(os.path.dirname(os.path.abspath(output)) for output in outputs):
+            os.startfile(folder)
+    return outputs

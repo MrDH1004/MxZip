@@ -67,12 +67,21 @@ def registered_exe():
 
 BEFORE = registered_exe()
 
+# Registration mirrors saved shell preferences into HKCU. Keep this smoke deterministic without changing the
+# user's real combined/separate preference; the cleanup below restores BEFORE using the normal user environment.
+REGISTRATION_TEMP = tempfile.TemporaryDirectory(prefix="yzip_smoke_registration_")
+registration_settings = os.path.join(REGISTRATION_TEMP.name, "yzip", "settings.json")
+os.makedirs(os.path.dirname(registration_settings))
+with open(registration_settings, "w", encoding="utf-8") as stream:
+    stream.write('{"shell_multi":"combined"}')
+registration_env = dict(os.environ, LOCALAPPDATA=REGISTRATION_TEMP.name)
+
 # ---- registry: migrate stale ZipKit.* verbs, register yzip.* for this exe ----
 legacy = [r"Software\Classes\*\shell\ZipKit.Compress", r"Software\Classes\Directory\shell\ZipKit.Compress",
           r"Software\Classes\SystemFileAssociations\.zip\shell\ZipKit.Here",
           r"Software\Classes\SystemFileAssociations\.zip\shell\ZipKit.Folder"]
 had_legacy = [k for k in legacy if key_exists(k)]
-r = subprocess.run([EXE, "--register-shell"], timeout=60)
+r = subprocess.run([EXE, "--register-shell"], timeout=60, env=registration_env)
 check("exe --register-shell exits 0 (no UI)", r.returncode == 0, r.returncode)
 check(f"stale ZipKit.* verbs removed (had {len(had_legacy)})", not any(key_exists(k) for k in legacy))
 KEY_COMPRESS = r"Software\Classes\*\shell\yzip.Compress"
