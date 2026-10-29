@@ -74,3 +74,22 @@ git diff --check
 Passed. `git diff --check` only printed line-ending warnings for concurrent, forbidden-file changes and reported no whitespace error.
 
 The packaged EXE smoke was not executed locally because this task explicitly forbids running or updating the installed app. The release workflow remains the execution environment for that packaged test.
+
+## Follow-up: COM lifetime review minors
+
+The follow-up review found that the direct probe ignored the `CoInitializeEx` result and used manual cleanup after the success path only.
+
+Microsoft's documented contract was applied as follows:
+
+- `S_OK` and `S_FALSE` are successful initialization calls and each is balanced by `CoUninitialize`.
+- `RPC_E_CHANGED_MODE` means an incompatible apartment was already selected. The failed STA call is reported distinctly and is not balanced by `CoUninitialize`.
+- COM interfaces, menu handles, PIDLs and the loaded module use scope-bound cleanup on every return path. The module lifetime encloses all objects created from the DLL.
+
+TDD RED added two negative probes. The old binary returned the ambient Explorer menu for `mta-direct-list` and did not emit either the changed-mode result or cleanup evidence. After implementation, the smoke reports:
+
+```text
+PASS direct DLL context-menu probe
+PASS RPC_E_CHANGED_MODE contract and negative cleanup probes
+```
+
+The negative cases cover an incompatible MTA-to-STA initialization and a missing DLL. `YZIP_PROBE_TRACE_CLEANUP=1` emits `CLEANUP` from the outer scope guard after inner resource destructors have run, providing observable coverage of early-return cleanup within the probe's testable process boundary.

@@ -66,12 +66,30 @@ def main() -> int:
             result = subprocess.run(
                 [PROBE, "direct-list", DLL, path], capture_output=True, text=True, encoding="utf-8"
             )
-        expected = "\tyzip.compress"
-        if result.returncode or "DIRECT_DLL" not in result.stdout or expected not in result.stdout:
-            print(result.stdout, end="")
-            print(result.stderr, end="")
-            return 1
+            expected = "\tyzip.compress"
+            if result.returncode or "DIRECT_DLL" not in result.stdout or expected not in result.stdout:
+                print(result.stdout, end="")
+                print(result.stderr, end="")
+                return 1
+            changed = subprocess.run(
+                [PROBE, "mta-direct-list", DLL, path], capture_output=True, text=True, encoding="utf-8",
+                env=dict(os.environ, YZIP_PROBE_TRACE_CLEANUP="1"),
+            )
+            if (changed.returncode != 7 or "RPC_E_CHANGED_MODE" not in changed.stdout
+                    or "CLEANUP" not in changed.stdout or "DIRECT_DLL" in changed.stdout):
+                print(changed.stdout, end="")
+                print(changed.stderr, end="")
+                return 1
+            missing = subprocess.run(
+                [PROBE, "direct-list", DLL + ".missing", path], capture_output=True, text=True, encoding="utf-8",
+                env=dict(os.environ, YZIP_PROBE_TRACE_CLEANUP="1"),
+            )
+            if missing.returncode != 3 or "ERROR LoadLibrary" not in missing.stdout or "CLEANUP" not in missing.stdout:
+                print(missing.stdout, end="")
+                print(missing.stderr, end="")
+                return 1
         print("PASS direct DLL context-menu probe")
+        print("PASS RPC_E_CHANGED_MODE contract and negative cleanup probes")
         return 0
     finally:
         restore_values(saved)
