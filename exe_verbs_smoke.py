@@ -91,12 +91,28 @@ with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\yzip") as k:
     app_cmd = winreg.QueryValueEx(k, "Command")[0]
 check("shell extension DLL installed outside dist (rebuild-safe)", os.path.exists(dll) and "dist" not in dll.lower(), dll)
 check("shell extension launches dist\\yzip\\yzip.exe", EXE.lower() in app_cmd.lower(), app_cmd)
+SHELLEX_KEYS = [r"Software\Classes\*\shellex\ContextMenuHandlers\AAAyzip",
+                r"Software\Classes\Directory\shellex\ContextMenuHandlers\AAAyzip"]
+registered_handlers = []
+for sub in SHELLEX_KEYS:
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub) as key:
+            registered_handlers.append(winreg.QueryValueEx(key, "")[0])
+    except OSError:
+        registered_handlers.append(None)
+check("file and directory context-menu handler registrations point to yzip CLSID",
+      registered_handlers == [CLSID, CLSID], registered_handlers)
+with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\CLSID\{CLSID}\InprocServer32") as key:
+    threading_model = winreg.QueryValueEx(key, "ThreadingModel")[0]
+check("COM registration uses Apartment threading", threading_model == "Apartment", threading_model)
 PROBE = os.path.join(HERE, "shell", "build", "probe.exe")
 
 
 def probe(mode, paths, env=None):
-    r = subprocess.run([PROBE, mode] + paths, capture_output=True, timeout=60, env=env)
+    r = subprocess.run([PROBE, "direct-" + mode, dll] + paths, capture_output=True, timeout=60, env=env)
     out = r.stdout.decode("utf-8", "replace")
+    if "DIRECT_DLL" not in out:
+        return 6, [], out + "ERROR direct DLL marker missing\n"
     return r.returncode, [ln.split("\t")[1:] for ln in out.splitlines() if ln.startswith("ITEM\t")], out
 
 

@@ -102,7 +102,11 @@ jobs:
         shell: powershell
         run: .\test_shell_native.ps1
 
-      - name: Packaged Explorer verb smoke
+      - name: Direct shell DLL logic smoke
+        shell: powershell
+        run: python .\shell_probe_smoke.py
+
+      - name: Packaged shell registration and verb smoke
         shell: powershell
         run: python .\exe_verbs_smoke.py
 

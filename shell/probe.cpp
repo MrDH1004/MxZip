@@ -1,6 +1,7 @@
 // Headless probe for the yzip context-menu handler, going through the shell's own menu composition
 // (IShellFolder::GetUIObjectOf -> default context menu -> registered handlers), like Explorer does.
 // usage: probe list|defaultonly|invoke|invokedlg <path> [<path> ...]   (all paths in one folder)
+//        probe direct-list|direct-defaultonly|direct-invoke|direct-invokedlg <dll> <path> [<path> ...]
 // prints one "ITEM\t<text>\t[icon]\t<verb>" line per top-level menu item and "SEP" per separator (UTF-8);
 // "invoke" runs yzip's "<name>.zip으로 압축하기", "invokedlg" runs "yzip으로 압축하기...",
 // "invoke:<verb>" runs the item with that verb (e.g. invoke:yzip.extractfolder).
@@ -24,9 +25,16 @@ int wmain(int argc, wchar_t** argv) {
     if (argc < 3)
         return 2;
     std::wstring mode = argv[1];
+    bool direct = mode.rfind(L"direct-", 0) == 0;
+    if (direct) {
+        mode.erase(0, 7);
+        if (argc < 4)
+            return 2;
+    }
+    int first_path = direct ? 3 : 2;
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     std::vector<PIDLIST_ABSOLUTE> abs;
-    for (int i = 2; i < argc; i++) {
+    for (int i = first_path; i < argc; i++) {
         PIDLIST_ABSOLUTE p = nullptr;
         if (FAILED(SHParseDisplayName(argv[i], nullptr, &p, 0, nullptr))) {
             put(L"ERROR parse " + std::wstring(argv[i]));
@@ -44,7 +52,39 @@ int wmain(int argc, wchar_t** argv) {
     for (auto p : abs)
         kids.push_back(ILFindLastID(p));
     IContextMenu* cm = nullptr;
-    HRESULT hr = parent->GetUIObjectOf(nullptr, (UINT)kids.size(), kids.data(), IID_IContextMenu, nullptr, (void**)&cm);
+    HRESULT hr = S_OK;
+    HMODULE module = nullptr;
+    IDataObject* data = nullptr;
+    IClassFactory* factory = nullptr;
+    IShellExtInit* init = nullptr;
+    PIDLIST_ABSOLUTE parent_abs = nullptr;
+    if (direct) {
+        module = LoadLibraryW(argv[2]);
+        if (!module) {
+            put(L"ERROR LoadLibrary");
+            return 3;
+        }
+        using GetClassObject = HRESULT(STDAPICALLTYPE*)(REFCLSID, REFIID, void**);
+        auto get_class_object = reinterpret_cast<GetClassObject>(GetProcAddress(module, "DllGetClassObject"));
+        static const CLSID clsid = {0x7e3b1c52, 0x9a4d, 0x4f1e, {0xb6, 0xc2, 0x3d, 0x8a, 0x5f, 0x0e, 0x9c, 0x71}};
+        parent_abs = ILCloneFull(abs[0]);
+        if (!get_class_object || !parent_abs || !ILRemoveLastID(parent_abs))
+            hr = E_FAIL;
+        if (SUCCEEDED(hr))
+            hr = SHCreateDataObject(parent_abs, (UINT)kids.size(), kids.data(), nullptr, IID_PPV_ARGS(&data));
+        if (SUCCEEDED(hr))
+            hr = get_class_object(clsid, IID_PPV_ARGS(&factory));
+        if (SUCCEEDED(hr))
+            hr = factory->CreateInstance(nullptr, IID_PPV_ARGS(&init));
+        if (SUCCEEDED(hr))
+            hr = init->Initialize(parent_abs, data, nullptr);
+        if (SUCCEEDED(hr))
+            hr = init->QueryInterface(IID_PPV_ARGS(&cm));
+        if (SUCCEEDED(hr))
+            put(L"DIRECT_DLL");
+    } else {
+        hr = parent->GetUIObjectOf(nullptr, (UINT)kids.size(), kids.data(), IID_IContextMenu, nullptr, (void**)&cm);
+    }
     if (FAILED(hr)) {
         put(L"ERROR GetUIObjectOf");
         return 3;
@@ -97,6 +137,16 @@ int wmain(int argc, wchar_t** argv) {
             return 5;
     }
     cm->Release();
+    if (init)
+        init->Release();
+    if (factory)
+        factory->Release();
+    if (data)
+        data->Release();
+    if (parent_abs)
+        CoTaskMemFree(parent_abs);
+    if (module)
+        FreeLibrary(module);
     parent->Release();
     for (auto p : abs)
         CoTaskMemFree(p);
