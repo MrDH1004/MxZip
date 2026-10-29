@@ -1,5 +1,8 @@
+import importlib.util
+import json
 import os
 import tempfile
+from types import SimpleNamespace
 import unittest
 import zipfile
 from pathlib import Path
@@ -175,6 +178,44 @@ class NativeZipCompressionTests(unittest.TestCase):
         self.assertEqual(b"existing archive", self.output.read_bytes())
         self.assertFalse(Path(str(self.output) + ".partial").exists())
 
+    def test_same_size_same_mtime_content_swap_is_rejected_before_publish(self):
+        source = self.source / "한글.txt"
+        original = source.read_bytes()
+        replacement = b"X" * len(original)
+        original_mtime = source.stat().st_mtime_ns
+        self.output.write_bytes(b"existing archive")
+        accelerator = RecordingZipCreator()
+
+        def mutate_after_snapshot():
+            source.write_bytes(replacement)
+            os.utime(source, ns=(original_mtime, original_mtime))
+            return accelerator
+
+        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}), \
+             mock.patch.object(zipwriter, "load_accelerator", side_effect=mutate_after_snapshot):
+            with self.assertRaisesRegex(ValueError, "changed"):
+                ziplib.create_zip([str(self.source)], str(self.output), level=5)
+        self.assertEqual(b"existing archive", self.output.read_bytes())
+        self.assertFalse(Path(str(self.output) + ".partial").exists())
+
+    def test_zip64_boundary_is_whole_operation_python_fallback(self):
+        accelerator = RecordingZipCreator()
+        source = self.source / "한글.txt"
+        stat = source.stat()
+        huge = SimpleNamespace(
+            st_size=zipwriter.ZIP64_LIMIT,
+            st_mode=stat.st_mode,
+            st_mtime_ns=stat.st_mtime_ns,
+        )
+        metadata = [(str(source), "huge.bin", huge)]
+        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}), \
+             mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
+            selected = zipwriter._try_native_zip(
+                metadata, str(self.output), 5, 1, None, None, None, None, True
+            )
+        self.assertFalse(selected)
+        self.assertEqual([], accelerator.calls)
+
     def test_symlink_input_uses_existing_writer_policy(self):
         target = self.root / "target.txt"
         target.write_bytes(b"target")
@@ -298,6 +339,34 @@ class BuiltNativeZipCreateTests(unittest.TestCase):
         self.assertEqual(archive_accel.AccelStatus.CORRUPT, result.status)
         self.assertFalse(output.exists())
 
+    def test_real_dll_same_size_same_mtime_mutation_fails_strong_verification(self):
+        source = self.root / "same-size.bin"
+        source.write_bytes(b"original")
+        original_mtime = source.stat().st_mtime_ns
+        metadata = [(str(source), "same-size.bin", source.stat())]
+        output = self.root / "same-size.zip"
+        accelerator = self.accelerator
+
+        class MutatingAccelerator:
+            capabilities = accelerator.capabilities
+
+            @staticmethod
+            def create_zip(*args, **kwargs):
+                source.write_bytes(b"replaced")
+                os.utime(source, ns=(original_mtime, original_mtime))
+                return accelerator.create_zip(*args, **kwargs)
+
+            @staticmethod
+            def last_error():
+                return accelerator.last_error()
+
+        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}), \
+             mock.patch.object(zipwriter, "load_accelerator", return_value=MutatingAccelerator()):
+            with self.assertRaisesRegex(ValueError, "changed"):
+                zipwriter._try_native_zip(
+                    metadata, str(output), 5, 1, None, None, None, None, True
+                )
+
         missing_item = self._item(source, "missing.bin")
         source.unlink()
         output = self.root / "missing.zip"
@@ -320,13 +389,73 @@ class BuiltNativeZipCreateTests(unittest.TestCase):
         ]
         result = self.accelerator.create_zip(items, output, 5, 8, None, None)
         self.assertEqual(archive_accel.AccelStatus.OK, result.status)
+        zipwriter._normalize_native_zip_metadata(
+            output,
+            [(item.source_path, item.archive_name, Path(item.source_path).stat())
+             for item in items],
+        )
         with zipfile.ZipFile(output) as archive:
             duplicates = [info for info in archive.infolist() if info.filename == "duplicate.txt"]
             self.assertEqual(2, len(duplicates))
             self.assertEqual(b"second", archive.read(duplicates[-1]))
             self.assertEqual(b"second", archive.read(long_name))
-            self.assertNotEqual(0, duplicates[-1].external_attr)
+            self.assertEqual(3, duplicates[-1].create_system)
+            self.assertEqual(0o100644, duplicates[-1].external_attr >> 16)
             self.assertGreaterEqual(duplicates[-1].date_time[0], 1980)
+
+    def test_directory_metadata_matches_existing_writer_policy(self):
+        directory = self.root / "directory"
+        directory.mkdir()
+        output = self.root / "directory.zip"
+        result = self.accelerator.create_zip(
+            [self._item(directory, "directory/", is_dir=True)], output, 5, 1, None, None
+        )
+        self.assertEqual(archive_accel.AccelStatus.OK, result.status)
+        zipwriter._normalize_native_zip_metadata(output, [(str(directory), "directory/", directory.stat())])
+        with zipfile.ZipFile(output) as archive:
+            info = archive.getinfo("directory/")
+            self.assertEqual(3, info.create_system)
+            self.assertEqual((0o40755 << 16) | 0x10, info.external_attr)
+
+    def test_noexcept_error_buffer_survives_repeated_invalid_calls(self):
+        library = self.accelerator._library
+        for _ in range(100):
+            status = library.yz_accel_create_zip(None, None, 0, None, 5, 1, 1, None, None)
+            self.assertEqual(archive_accel.AccelStatus.ERROR, status)
+            self.assertIn("invalid", self.accelerator.last_error())
+            library.yz_accel_clear_error()
+            self.assertEqual("", self.accelerator.last_error())
+
+
+class Task5BenchmarkEvidenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        path = Path(".superpowers/sdd/2026-10-28-native-performance-hybrid/task5_bench.py")
+        spec = importlib.util.spec_from_file_location("task5_bench", path)
+        cls.benchmark = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.benchmark)
+
+    def test_report_requires_run_hashes_and_native_selection(self):
+        valid_run = {
+            "seconds": 1.0,
+            "archive_size": 10,
+            "source_tree_sha256": "a" * 64,
+            "destination_tree_sha256": "a" * 64,
+            "actual_selection": "native",
+        }
+        native_run = dict(valid_run)
+        python_run = dict(valid_run, actual_selection="python")
+        bandizip_run = dict(valid_run, actual_selection="bandizip")
+        report = {"results": [{"tools": {
+            "native-yzip": {"runs": [native_run]},
+            "existing-yzip": {"runs": [python_run]},
+            "bandizip": {"runs": [bandizip_run]},
+        }}]}
+        self.benchmark.validate_evidence(report)
+        fallback = json.loads(json.dumps(report))
+        fallback["results"][0]["tools"]["native-yzip"]["runs"][0]["actual_selection"] = "python"
+        with self.assertRaisesRegex(RuntimeError, "fallback"):
+            self.benchmark.validate_evidence(fallback)
 
 
 if __name__ == "__main__":

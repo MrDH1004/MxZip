@@ -11,6 +11,7 @@
 #include "C/7zCrc.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <limits>
 #include <mutex>
@@ -23,7 +24,7 @@
 #pragma comment(lib, "OleAut32.lib")
 
 namespace {
-thread_local std::wstring g_last_error;
+thread_local std::array<wchar_t, 512> g_last_error{};
 thread_local yz_zip_metrics g_last_metrics{};
 static_assert(sizeof(std::uint32_t) == sizeof(LONG));
 static_assert(sizeof(std::uint64_t) == sizeof(LONG64));
@@ -61,15 +62,19 @@ private:
     std::uint64_t started_;
 };
 
-void set_error(const wchar_t* message) {
-    g_last_error = message == nullptr ? L"native ZIP extraction failed" : message;
+void clear_error() noexcept {
+    g_last_error[0] = L'\0';
 }
 
-void set_error_code(const wchar_t* message, HRESULT code, Int32 operation) {
-    wchar_t buffer[192]{};
-    _snwprintf_s(buffer, _countof(buffer), _TRUNCATE, L"%ls (HRESULT=0x%08X, operation=%d)",
-                 message, static_cast<unsigned>(code), static_cast<int>(operation));
-    g_last_error = buffer;
+void set_error(const wchar_t* message) noexcept {
+    const wchar_t* source = message == nullptr ? L"native accelerator failed" : message;
+    wcsncpy_s(g_last_error.data(), g_last_error.size(), source, _TRUNCATE);
+}
+
+void set_error_code(const wchar_t* message, HRESULT code, Int32 operation) noexcept {
+    _snwprintf_s(g_last_error.data(), g_last_error.size(), _TRUNCATE,
+                 L"%ls (HRESULT=0x%08X, operation=%d)", message,
+                 static_cast<unsigned>(code), static_cast<int>(operation));
 }
 
 bool is_cancelled(const volatile std::uint32_t* flag) {
@@ -734,24 +739,20 @@ std::uint64_t YZ_ACCEL_CALL yz_accel_capabilities() noexcept {
 std::size_t YZ_ACCEL_CALL yz_accel_last_error(
     wchar_t* buffer,
     const std::size_t buffer_chars) noexcept {
-    try {
-        const std::size_t required = g_last_error.size() + 1;
-        if (buffer != nullptr && buffer_chars != 0) {
-            const std::size_t copied = std::min(g_last_error.size(), buffer_chars - 1);
-            g_last_error.copy(buffer, copied);
-            buffer[copied] = L'\0';
+    const std::size_t length = wcsnlen_s(g_last_error.data(), g_last_error.size());
+    const std::size_t required = length + 1;
+    if (buffer != nullptr && buffer_chars != 0) {
+        const std::size_t copied = std::min(length, buffer_chars - 1);
+        if (copied != 0) {
+            wmemcpy(buffer, g_last_error.data(), copied);
         }
-        return required;
-    } catch (...) {
-        if (buffer != nullptr && buffer_chars != 0) {
-            buffer[0] = L'\0';
-        }
-        return 1;
+        buffer[copied] = L'\0';
     }
+    return required;
 }
 
 void YZ_ACCEL_CALL yz_accel_clear_error() noexcept {
-    g_last_error.clear();
+    clear_error();
 }
 
 void YZ_ACCEL_CALL yz_accel_cancel(
@@ -772,7 +773,7 @@ static std::uint32_t extract_archive(
     const std::uint64_t output_limit,
     yz_progress_counters* progress,
     volatile std::uint32_t* cancellation_flag) noexcept {
-    g_last_error.clear();
+    clear_error();
     g_last_metrics = {};
     LARGE_INTEGER qpc_frequency{};
     if (QueryPerformanceFrequency(&qpc_frequency) && qpc_frequency.QuadPart > 0) {
@@ -871,7 +872,7 @@ static std::uint32_t extract_archive(
     }
     if (!FreeLibrary(module)) {
         g_last_metrics.free_library_error = GetLastError();
-        if (g_last_error.empty()) {
+        if (g_last_error[0] == L'\0') {
             set_error(L"7z.dll cleanup failed after ZIP extraction");
         }
     }
@@ -888,7 +889,7 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_extract_zip(
 
 std::uint32_t YZ_ACCEL_CALL yz_accel_inspect_7z(
     const wchar_t* seven_zip_dll, const wchar_t* source, yz_archive_info* info) noexcept {
-    g_last_error.clear();
+    clear_error();
     if (seven_zip_dll == nullptr || source == nullptr || info == nullptr) return YZ_ACCEL_ERROR;
     *info = {};
     HMODULE module = LoadLibraryExW(seven_zip_dll, nullptr,
@@ -1007,7 +1008,7 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_create_zip(
     const std::uint32_t level, const std::uint32_t threads,
     const std::uint64_t output_limit,
     yz_progress_counters* progress, volatile std::uint32_t* cancellation_flag) noexcept {
-    g_last_error.clear();
+    clear_error();
     if (seven_zip_dll == nullptr || items == nullptr || item_count == 0 ||
         item_count > std::numeric_limits<UInt32>::max() || output_part == nullptr ||
         progress == nullptr || level > 9 || threads == 0 || output_limit == 0) {
