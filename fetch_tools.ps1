@@ -3,10 +3,50 @@
 #   libarchive.dll   libarchive 3.8.10, self-contained MSVC x64 DLL with RAR/RAR5, ISO/UDF, CAB, LHA, ...
 #   yzip_native.dll  yzip's Rust cdylib embedding the pinned unegg/unalz libraries (EGG / ALZ)
 # Every downloaded binary is checked against a pinned SHA-256 before it enters the bundle.
-param([switch]$Force)
+param(
+    [switch]$Force,
+    [string]$ToolsDirectory = "",
+    [switch]$CheckCacheOnly
+)
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
-$tools = Join-Path $root "tools"
+$tools = if ($ToolsDirectory) { [IO.Path]::GetFullPath($ToolsDirectory) } else { Join-Path $root "tools" }
+
+$requiredBinaries = "7z.exe", "7z.dll", "libarchive.dll", "yzip_native.dll", "zpaq.exe"
+$requiredLicenses = @(
+    @{ Path = "licenses\7-Zip License.txt"; Marker = "7-Zip" },
+    @{ Path = "licenses\libarchive COPYING.txt"; Marker = "libarchive" },
+    @{ Path = "licenses\libarchive-prebuilt LICENSE.txt"; Marker = "libarchive" },
+    @{ Path = "licenses\ZPAQ COPYING.txt"; Marker = "zpaq.cpp" },
+    @{ Path = "licenses\ZPAQ manual.pod"; Marker = "zpaq.pod" },
+    @{ Path = "licenses\unegg LICENSE.txt"; Marker = "MIT License" },
+    @{ Path = "licenses\unalz LICENSE.txt"; Marker = "MIT License" }
+)
+
+function Test-RequiredLeaf([string]$RelativePath, [string]$Marker = "") {
+    $path = Join-Path $tools $RelativePath
+    $item = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
+    if (-not $item -or $item.PSIsContainer -or $item.Length -le 0) { return $false }
+    if ($Marker -and -not (Select-String -LiteralPath $path -SimpleMatch $Marker -Quiet)) { return $false }
+    return $true
+}
+
+function Test-NativeToolsCache {
+    foreach ($relative in $requiredBinaries) {
+        if (-not (Test-RequiredLeaf $relative)) { return $false }
+    }
+    foreach ($license in $requiredLicenses) {
+        if (-not (Test-RequiredLeaf $license.Path $license.Marker)) { return $false }
+    }
+    return $true
+}
+
+if ($CheckCacheOnly) {
+    if (Test-NativeToolsCache) { Write-Output "tools: present"; exit 0 }
+    Write-Error "tools: cache invalid"
+    exit 1
+}
+
 $sevenZipPinsPath = Join-Path $root "nativeaccel\7zip-pins.json"
 $sevenZipPins = Get-Content -Raw -LiteralPath $sevenZipPinsPath | ConvertFrom-Json
 $sevenZipSourceUrl = [string]$sevenZipPins.source_url
@@ -38,8 +78,7 @@ if ($Force -or -not (Test-Path -LiteralPath $headerSentinel)) {
     }
 }
 
-$need = "7z.exe", "7z.dll", "libarchive.dll", "yzip_native.dll", "zpaq.exe", "licenses\7-Zip License.txt", "licenses\libarchive COPYING.txt", "licenses\libarchive-prebuilt LICENSE.txt", "licenses\ZPAQ COPYING.txt", "licenses\ZPAQ manual.pod", "licenses\unegg LICENSE.txt", "licenses\unalz LICENSE.txt"
-if (-not $Force -and -not ($need | Where-Object { -not (Test-Path (Join-Path $tools $_)) })) {
+if (-not $Force -and (Test-NativeToolsCache)) {
     Write-Output "tools: present"
     return
 }

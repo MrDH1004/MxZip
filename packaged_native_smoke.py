@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 import sys
@@ -15,22 +16,44 @@ import zlib
 import archive_accel
 
 
-def main() -> int:
-    tools = Path(__file__).resolve().parent / "dist" / "yzip" / "_internal" / "tools"
-    accelerator_dll = tools / "yzip_accel.dll"
-    runtime_dll = tools / "7z.dll"
-    manifest_path = tools / "7zip-pins.json"
-    license_path = tools / "licenses" / "7-Zip License.txt"
-    for required in (accelerator_dll, runtime_dll, manifest_path, license_path):
+@dataclass(frozen=True)
+class PackagedPayload:
+    accelerator_dll: Path
+    runtime_dll: Path
+    manifest_path: Path
+    license_path: Path
+
+
+def validate_packaged_payload(tools: Path) -> PackagedPayload:
+    payload = PackagedPayload(
+        accelerator_dll=tools / "yzip_accel.dll",
+        runtime_dll=tools / "7z.dll",
+        manifest_path=tools / "7zip-pins.json",
+        license_path=tools / "licenses" / "7-Zip License.txt",
+    )
+    for required in (
+        payload.accelerator_dll, payload.runtime_dll,
+        payload.manifest_path, payload.license_path,
+    ):
         if not required.is_file():
             raise FileNotFoundError(f"packaged native payload is missing: {required}")
-    if not license_path.read_text(encoding="utf-8", errors="replace").strip():
-        raise RuntimeError("packaged 7-Zip license is empty")
-
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    runtime_hash = hashlib.sha256(runtime_dll.read_bytes()).hexdigest()
+        if required.stat().st_size <= 0:
+            raise RuntimeError(f"packaged native payload is empty: {required}")
+    license_text = payload.license_path.read_text(encoding="utf-8", errors="replace")
+    if "7-Zip" not in license_text:
+        raise RuntimeError("packaged 7-Zip license is empty or invalid")
+    manifest = json.loads(payload.manifest_path.read_text(encoding="utf-8"))
+    runtime_hash = hashlib.sha256(payload.runtime_dll.read_bytes()).hexdigest()
     if runtime_hash != manifest["binary_sha256"]["7z.dll"]:
         raise RuntimeError("packaged 7z.dll does not match 7zip-pins.json")
+    return payload
+
+
+def main() -> int:
+    tools = Path(__file__).resolve().parent / "dist" / "yzip" / "_internal" / "tools"
+    payload = validate_packaged_payload(tools)
+    accelerator_dll = payload.accelerator_dll
+    runtime_dll = payload.runtime_dll
 
     packaged_module = tools.parent / "archive_accel.py"
     with mock.patch.object(archive_accel, "__file__", str(packaged_module)), \
