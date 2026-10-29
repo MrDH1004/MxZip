@@ -1,4 +1,5 @@
 import os
+import subprocess
 import tempfile
 import unittest
 from dataclasses import replace
@@ -71,6 +72,54 @@ class Native7zIntegrationTests(unittest.TestCase):
         result = self.accel.extract_7z(archive, [job], None, None)
         self.assertEqual(archive_accel.AccelStatus.OK, result.status)
         self.assertEqual(b"alpha" * 1000, stage.read_bytes())
+
+    def test_solid_archive_extracts_nonleading_selected_indexes(self):
+        source = self.root / "solid-source"
+        source.mkdir()
+        payloads = [b"first" * 2000, b"second" * 3000, b"third" * 4000]
+        archive = self.root / "solid.7z"
+        with py7zr.SevenZipFile(archive, "w", filters=[{"id": py7zr.FILTER_LZMA2}]) as out:
+            for index, payload in enumerate(payloads):
+                path = source / f"f{index}.bin"
+                path.write_bytes(payload)
+                out.write(path, path.name)
+        with py7zr.SevenZipFile(archive) as opened:
+            infos = opened.list()
+        inspected = self.accel.inspect_7z(archive)
+        self.assertTrue(inspected.solid)
+        for index in (1, 2):
+            stage = self.root / f"selected-{index}.stage"
+            result = self.accel.extract_7z(
+                archive,
+                [archive_accel.Native7zJob(
+                    index, str(stage), infos[index].uncompressed, infos[index].crc32
+                )],
+                None,
+                None,
+            )
+            self.assertEqual(archive_accel.AccelStatus.OK, result.status)
+            self.assertEqual(payloads[index], stage.read_bytes())
+
+    def test_non_solid_single_member_archive_extracts_with_real_dll(self):
+        source = self.root / "single.bin"
+        payload = b"single-member" * 4096
+        source.write_bytes(payload)
+        archive = self.root / "non-solid.7z"
+        with py7zr.SevenZipFile(archive, "w", filters=[{"id": py7zr.FILTER_LZMA2}]) as out:
+            out.write(source, source.name)
+        with py7zr.SevenZipFile(archive) as opened:
+            info = opened.list()[0]
+        inspected = self.accel.inspect_7z(archive)
+        self.assertFalse(inspected.solid)
+        stage = self.root / "non-solid.stage"
+        result = self.accel.extract_7z(
+            archive,
+            [archive_accel.Native7zJob(0, str(stage), info.uncompressed, info.crc32)],
+            None,
+            None,
+        )
+        self.assertEqual(archive_accel.AccelStatus.OK, result.status)
+        self.assertEqual(payload, stage.read_bytes())
 
     def test_unsupported_coder_and_aes_are_rejected_before_writes(self):
         for archive in (
@@ -160,6 +209,33 @@ class Native7zIntegrationTests(unittest.TestCase):
         self.assertFalse((dest / "a.txt").exists())
         self.assertFalse(any(dest.rglob("*.partial")))
 
+    def test_staging_cleanup_permission_error_preserves_original_error(self):
+        archive = self.make_archive()
+        dest = self.root / "cleanup-error"
+        fake = mock.Mock(capabilities=archive_accel.CAP_7Z_EXTRACT)
+        fake.inspect_7z.return_value = archive_accel.NativeArchiveInfo(True, False, True, 2)
+
+        def corrupt(_source, jobs, _progress, _cancel):
+            Path(jobs[0].staging_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(jobs[0].staging_path).write_bytes(b"partial")
+            return archive_accel.NativeResult(archive_accel.AccelStatus.CORRUPT, 7)
+
+        fake.extract_7z.side_effect = corrupt
+        real_remove = os.remove
+
+        def blocked_remove(path):
+            if str(path).endswith(".part"):
+                raise PermissionError("injected staging cleanup failure")
+            return real_remove(path)
+
+        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+             mock.patch.object(formats, "load_accelerator", return_value=fake), \
+             mock.patch.object(formats.os, "remove", side_effect=blocked_remove):
+            with formats.SevenZArchive(str(archive)) as opened:
+                with self.assertRaisesRegex(ValueError, "corrupt") as caught:
+                    opened.extract(str(dest))
+        self.assertTrue(any("cleanup" in note.lower() for note in getattr(caught.exception, "__notes__", [])))
+
     def test_corrupt_archive_does_not_replace_existing_output(self):
         archive = self.make_archive()
         data = bytearray(archive.read_bytes())
@@ -190,6 +266,26 @@ class Native7zIntegrationTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, "python fallback"):
                         opened.extract(str(self.root / "fallback"))
             fake.inspect_7z.assert_not_called()
+
+    def test_real_7z_symlink_metadata_is_native_ineligible(self):
+        target = self.root / "target.txt"
+        target.write_text("target", encoding="utf-8")
+        link = self.root / "link.txt"
+        created = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", str(link), str(target)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, created.returncode, created.stderr or created.stdout)
+        archive = self.root / "symlink.7z"
+        with py7zr.SevenZipFile(archive, "w", filters=[{"id": py7zr.FILTER_LZMA2}]) as out:
+            out.write(link, "link.txt")
+        with py7zr.SevenZipFile(archive) as opened:
+            infos = opened.list()
+        self.assertTrue(infos[0].is_symlink)
+        self.assertFalse(self.accel.inspect_7z(archive).supported)
+        with formats.SevenZArchive(str(archive)) as opened:
+            self.assertFalse(opened._native_metadata_eligible())
 
     def test_native_publish_supports_long_destination_path(self):
         archive = self.make_archive()

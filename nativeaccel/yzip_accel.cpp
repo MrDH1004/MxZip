@@ -390,9 +390,7 @@ public:
     }
 
     STDMETHOD(SetTotal)(UInt64 total) noexcept override {
-        if (total > output_limit_) {
-            return E_FAIL;
-        }
+        decode_total_ = total;
         return is_cancelled(cancellation_flag_) ? E_ABORT : S_OK;
     }
 
@@ -449,8 +447,14 @@ public:
     }
 
     STDMETHOD(SetOperationResult)(Int32 result) noexcept override {
-        if (result != NArchive::NExtract::NOperationResult::kOK ||
-            current_ == nullptr || !current_->verified()) {
+        if (current_ == nullptr) {
+            if (result != NArchive::NExtract::NOperationResult::kOK) {
+                operation_failed_ = true;
+                if (!io_failed_) corrupt_ = true;
+            }
+            return operation_failed_ ? E_FAIL : S_OK;
+        }
+        if (result != NArchive::NExtract::NOperationResult::kOK || !current_->verified()) {
             operation_failed_ = true;
             if (!io_failed_) {
                 corrupt_ = true;
@@ -485,6 +489,7 @@ private:
     bool corrupt_;
     bool io_failed_;
     yz_zip_metrics* metrics_;
+    std::uint64_t decode_total_ = 0;
     std::unordered_map<UInt32, const yz_zip_job*> lookup_;
 };
 
@@ -607,7 +612,7 @@ static std::uint32_t extract_archive(
                             } else if (callback->io_failed()) {
                                 set_error(L"native ZIP staging I/O failed");
                                 status = YZ_ACCEL_IO_ERROR;
-                            } else if (callback->corrupt() || result != S_OK) {
+                            } else if (callback->corrupt()) {
                                 set_error(L"7z.dll reported corrupt ZIP data");
                                 status = YZ_ACCEL_CORRUPT;
                             } else if (result != S_OK || callback->operation_failed()) {
@@ -697,7 +702,18 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_inspect_7z(
                     PropVariantClear(&value);
                     PropVariantInit(&value);
                     if (archive->GetProperty(i, kpidSymLink, &value) == S_OK &&
-                        value.vt == VT_BOOL && value.boolVal != VARIANT_FALSE) unsupported = true;
+                        ((value.vt == VT_BOOL && value.boolVal != VARIANT_FALSE) ||
+                         (value.vt == VT_BSTR && value.bstrVal != nullptr && value.bstrVal[0] != L'\0')))
+                        unsupported = true;
+                    PropVariantClear(&value);
+                    PropVariantInit(&value);
+                    if (archive->GetProperty(i, kpidAttrib, &value) == S_OK && value.vt == VT_UI4) {
+                        const UInt32 attributes = value.ulVal;
+                        const UInt32 unix_mode = attributes >> 16;
+                        if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+                            ((attributes & 0x8000U) != 0 && (unix_mode & 0xF000U) == 0xA000U))
+                            unsupported = true;
+                    }
                     PropVariantClear(&value);
                     PropVariantInit(&value);
                     if (archive->GetProperty(i, kpidMethod, &value) == S_OK && value.vt == VT_BSTR) {
@@ -716,7 +732,12 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_inspect_7z(
                 if (!encrypted && !unsupported) info->flags |= YZ_ARCHIVE_SUPPORTED;
                 status = (info->flags & YZ_ARCHIVE_SUPPORTED) ? YZ_ACCEL_OK : YZ_ACCEL_UNSUPPORTED;
             }
-            archive->Close();
+            const HRESULT close_result = archive->Close();
+            g_last_metrics.close_hresult = static_cast<std::uint32_t>(close_result);
+            if (close_result != S_OK) {
+                set_error(L"7z.dll failed to close the 7z archive after inspection");
+                status = YZ_ACCEL_ERROR;
+            }
         } else {
             status = YZ_ACCEL_CORRUPT;
         }
@@ -726,7 +747,14 @@ std::uint32_t YZ_ACCEL_CALL yz_accel_inspect_7z(
     }
     if (input != nullptr) input->Release();
     if (archive != nullptr) archive->Release();
-    FreeLibrary(module);
+    if (!FreeLibrary(module)) {
+        g_last_metrics.free_library_error = GetLastError();
+        try {
+            set_error(L"7z.dll cleanup failed after 7z inspection");
+        } catch (...) {
+        }
+        status = YZ_ACCEL_ERROR;
+    }
     return status;
 }
 

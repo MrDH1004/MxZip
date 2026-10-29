@@ -19,6 +19,7 @@ import tarfile
 import threading
 import time
 import warnings
+import sys
 import zipfile
 import zlib
 from concurrent.futures import ThreadPoolExecutor
@@ -967,17 +968,28 @@ class SevenZArchive(_Base):
             succeeded = True
             return True
         finally:
+            cleanup_errors = []
             for path in staged:
                 try:
                     os.remove(path)
                 except FileNotFoundError:
                     pass
+                except OSError as error:
+                    cleanup_errors.append(f"Could not remove native 7z staging file {path}: {error}")
             if not succeeded:
                 for directory in reversed(created_dirs):
                     try:
                         os.rmdir(directory)
-                    except OSError:
-                        pass
+                    except OSError as error:
+                        cleanup_errors.append(f"Could not remove native 7z staging directory {directory}: {error}")
+            if cleanup_errors:
+                active = sys.exception()
+                if active is not None:
+                    for message in cleanup_errors:
+                        active.add_note(message)
+                else:
+                    for message in cleanup_errors:
+                        warnings.warn(message, RuntimeWarning, stacklevel=2)
 
     def test(self, progress=None, cancel=None) -> list[str]:
         if progress:
