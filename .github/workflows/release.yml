@@ -48,7 +48,7 @@ jobs:
       - name: Native payload sanity check
         shell: powershell
         run: |
-          $required = "tools\7z.dll", "tools\7zip-pins.json", "tools\libarchive.dll", "tools\yzip_accel.dll", "tools\yzip_native.dll", "tools\zpaq.exe"
+          $required = "tools\7z.dll", "tools\7zip-pins.json", "tools\licenses\7-Zip License.txt", "tools\libarchive.dll", "tools\yzip_accel.dll", "tools\yzip_native.dll", "tools\zpaq.exe"
           foreach ($path in $required) {
             if (-not (Test-Path $path)) { throw "missing native payload: $path" }
             $hash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLower()
@@ -57,14 +57,14 @@ jobs:
           $env:YZIP_LIBARCHIVE_DLL = (Resolve-Path "tools\libarchive.dll").Path
           $env:YZIP_ACCEL_DLL = (Resolve-Path "tools\yzip_accel.dll").Path
           $env:YZIP_NATIVE_DLL = (Resolve-Path "tools\yzip_native.dll").Path
-          python -c "import ctypes, os; ctypes.WinDLL(os.environ['YZIP_LIBARCHIVE_DLL']); ctypes.WinDLL(os.environ['YZIP_NATIVE_DLL']); from archive_accel import CAP_ZIP_EXTRACT, load_accelerator; a = load_accelerator(os.environ['YZIP_ACCEL_DLL']); assert a is not None and a.capabilities & CAP_ZIP_EXTRACT"
+          python -c "import ctypes, os; ctypes.WinDLL(os.environ['YZIP_LIBARCHIVE_DLL']); ctypes.WinDLL(os.environ['YZIP_NATIVE_DLL']); from archive_accel import CAP_ZIP_EXTRACT, CAP_7Z_EXTRACT, CAP_ZIP_CREATE, load_accelerator; a = load_accelerator(os.environ['YZIP_ACCEL_DLL']); expected = CAP_ZIP_EXTRACT | CAP_7Z_EXTRACT | CAP_ZIP_CREATE; assert a is not None and a.capabilities & expected == expected"
           if ((Get-Item "tools\zpaq.exe").Length -lt 100000) { throw "zpaq.exe is unexpectedly small" }
 
       - name: Tests
         env:
           QT_QPA_PLATFORM: offscreen
           YZIP_NO_UPDATE: "1"
-        run: python -W ignore -m unittest test_ziprepair test_ziplib test_zipwriter test_formats test_nativearchive test_moreformats test_updater test_archive_accel test_zip_native test_zip_extract_perf
+        run: python -W ignore -m unittest test_ziprepair test_ziplib test_zipwriter test_formats test_nativearchive test_moreformats test_updater test_archive_accel test_zip_native test_7z_native test_zip_compress_native test_zip_extract_perf test_seven_io_performance test_zipwriter_performance test_package_native
 
       - name: Preferences tests
         env:
@@ -86,7 +86,8 @@ jobs:
           $accel = @(Get-ChildItem dist\yzip -Recurse -Filter yzip_accel.dll)
           $pins = @(Get-ChildItem dist\yzip -Recurse -Filter 7zip-pins.json)
           $runtime = @(Get-ChildItem dist\yzip -Recurse -Filter 7z.dll)
-          if ($accel.Count -ne 1 -or $pins.Count -ne 1 -or $runtime.Count -ne 1) {
+          $license = @(Get-ChildItem dist\yzip -Recurse -Filter "7-Zip License.txt")
+          if ($accel.Count -ne 1 -or $pins.Count -ne 1 -or $runtime.Count -ne 1 -or $license.Count -ne 1) {
             throw "packaged native accelerator payload is incomplete"
           }
           python .\packaged_native_smoke.py

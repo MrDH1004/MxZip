@@ -57,6 +57,14 @@ class LoaderTests(unittest.TestCase):
         self.assertIsNone(accelerator)
         self.assertIn("not found", archive_accel.disabled_reason().lower())
 
+    def test_global_kill_switch_blocks_explicit_and_default_loading(self):
+        with mock.patch.dict(os.environ, {"YZIP_DISABLE_ACCEL": "1"}, clear=False), \
+             mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
+            self.assertIsNone(archive_accel.load_accelerator(Path("explicit.dll")))
+            self.assertIsNone(archive_accel.load_accelerator())
+        load.assert_not_called()
+        self.assertIn("YZIP_DISABLE_ACCEL=1", archive_accel.disabled_reason())
+
     def test_wrong_abi_disables_accelerator(self):
         library = FakeLibrary(abi=archive_accel.ABI_VERSION + 1)
         with mock.patch.object(archive_accel.ctypes, "WinDLL", return_value=library):

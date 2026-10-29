@@ -49,7 +49,7 @@ yzip의 강점인 다중 스레드 7z 압축은 유지하면서, 반디집보다
 
 ### 엔진
 
-- 공식 7-Zip `7z.dll` 26.05 계열의 DLL 인터페이스를 사용하는 얇은 C++ 브리지 `yzip_accel.dll`을 추가한다.
+- 검증된 공식 7-Zip `7z.dll` 26.04 계열의 DLL 인터페이스를 사용하는 얇은 C++ 브리지 `yzip_accel.dll`을 추가한다. 26.04 바이너리·소스·헤더·CRC 소스의 SHA-256 pin을 하나의 manifest로 유지하며, 버전 변경은 ABI 및 benchmark 재검증을 요구한다.
 - 외부 프로세스는 실행하지 않는다. 현재 배포에 포함된 `7z.dll`을 프로세스 내부에서 동적 로드한다.
 - 공식 `Client7z` 예제를 기준으로 필요한 `IInArchive`, `IOutArchive`, stream/callback 인터페이스만 구현한다.
 - 7-Zip ABI와 DLL 버전을 시작 시 검증한다. 불일치·로드 실패·미지원 기능은 오류가 아니라 기존 Python 엔진 fallback 사유로 처리한다.

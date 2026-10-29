@@ -474,6 +474,10 @@ def _validated_7z_path() -> Path | None:
 def load_accelerator(path: os.PathLike[str] | str | None = None) -> Accelerator | None:
     global _disabled_reason
 
+    if os.environ.get("YZIP_DISABLE_ACCEL") == "1":
+        _disabled_reason = "native acceleration disabled by YZIP_DISABLE_ACCEL=1"
+        return None
+
     candidates = (Path(path),) if path is not None else _default_candidates()
     failures: list[str] = []
     for candidate in candidates:

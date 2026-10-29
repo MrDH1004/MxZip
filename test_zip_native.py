@@ -189,6 +189,19 @@ class NativeZipTransactionTests(unittest.TestCase):
         self.assertEqual([], accelerator.calls)
         self.assertEqual(b"alpha", Path(destination, "a.txt").read_bytes())
 
+    def test_global_kill_switch_overrides_native_zip_extract_opt_in(self):
+        path = self.make_zip([("a.txt", b"alpha")])
+        destination = os.path.join(self.root, "kill-switch")
+        with mock.patch.dict(os.environ, {
+            "YZIP_NATIVE_ZIP_EXTRACT": "1", "YZIP_DISABLE_ACCEL": "1",
+        }, clear=False), mock.patch.object(
+            ziplib, "load_accelerator", wraps=archive_accel.load_accelerator
+        ), mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
+            with ziplib.Archive(path) as archive:
+                archive.extract(destination)
+        load.assert_not_called()
+        self.assertEqual(b"alpha", Path(destination, "a.txt").read_bytes())
+
     def test_many_small_plain_members_use_faster_python_engine_when_native_is_enabled(self):
         members = [(f"f{index:03d}.txt", f"payload-{index}".encode()) for index in range(256)]
         path = self.make_zip(members)

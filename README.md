@@ -95,3 +95,7 @@ RAR, EGG and ALZ remain extraction-only; archive creation is not advertised for 
 
 ZPAQ is read, tested and extracted through the bundled x64 `zpaq.exe` compatibility reader. ZIP/7Z self-extracting EXE files are accepted only when an archive signature is found inside the executable; ordinary EXE files are rejected.
 The remaining 7-Zip-only formats use the bundled 7-Zip compatibility reader until a dedicated in-process backend is added.
+
+Plain ZIP extraction, plain LZMA/LZMA2 7z extraction, and new plain ZIP creation also have an optional in-process accelerator (`yzip_accel.dll`) backed by the bundled, SHA-256-pinned official 7-Zip 26.04 `7z.dll`. Benchmark gates did not justify enabling these paths by default, so they remain diagnostic opt-ins through `YZIP_NATIVE_ZIP_EXTRACT=1`, `YZIP_NATIVE_7Z_EXTRACT=1`, and `YZIP_NATIVE_ZIP_CREATE=1`. Unsupported methods, encryption, split archives, unavailable or mismatched DLLs, and other ineligible operations use the existing Python implementation for the whole operation.
+
+Set `YZIP_DISABLE_ACCEL=1` to disable every `yzip_accel.dll` capability even when one or more opt-in variables are set. Bundled third-party notices, including `7-Zip License.txt`, are installed under `_internal/tools/licenses`.

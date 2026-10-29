@@ -6,7 +6,7 @@
 
 **Architecture:** A small MSVC C++ bridge (`yzip_accel.dll`) loads the pinned official `7z.dll` and exposes a narrow C ABI. Python owns archive policy, safe destinations, transactions, fallback, cancellation, and progress polling; native code owns only codec-heavy work. Existing Python engines remain the compatibility and failure fallback.
 
-**Tech Stack:** Python 3.14, C++17/MSVC x64 `/O2 /GL /MT`, official 7-Zip 26.05 DLL interfaces, ctypes, unittest, PowerShell build scripts.
+**Tech Stack:** Python 3.14, C++17/MSVC x64 `/O2 /GL /MT`, verified official 7-Zip 26.04 DLL interfaces, ctypes, unittest, PowerShell build scripts.
 
 **Spec:** `docs/superpowers/specs/2026-10-28-native-performance-hybrid-design.md`
 

@@ -170,6 +170,19 @@ class Native7zIntegrationTests(unittest.TestCase):
         self.assertEqual(b"alpha" * 1000, (dest / "a.txt").read_bytes())
         self.assertFalse((dest / "empty.bin").exists())
 
+    def test_global_kill_switch_overrides_native_7z_extract_opt_in(self):
+        archive = self.make_archive()
+        dest = self.root / "disabled-native"
+        with mock.patch.dict(os.environ, {
+            "YZIP_NATIVE_7Z_EXTRACT": "1", "YZIP_DISABLE_ACCEL": "1",
+        }, clear=False), mock.patch.object(
+            formats, "load_accelerator", wraps=archive_accel.load_accelerator
+        ), mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
+            with formats.SevenZArchive(str(archive)) as opened:
+                opened.extract(str(dest))
+        load.assert_not_called()
+        self.assertEqual(b"alpha" * 1000, (dest / "a.txt").read_bytes())
+
     def test_native_cancel_and_size_limit_leave_no_staging_output(self):
         archive = self.make_archive()
         stage = self.root / "cancelled.stage"

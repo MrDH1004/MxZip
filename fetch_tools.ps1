@@ -38,7 +38,7 @@ if ($Force -or -not (Test-Path -LiteralPath $headerSentinel)) {
     }
 }
 
-$need = "7z.exe", "7z.dll", "libarchive.dll", "yzip_native.dll", "zpaq.exe"
+$need = "7z.exe", "7z.dll", "libarchive.dll", "yzip_native.dll", "zpaq.exe", "licenses\7-Zip License.txt", "licenses\libarchive COPYING.txt", "licenses\libarchive-prebuilt LICENSE.txt", "licenses\ZPAQ COPYING.txt", "licenses\ZPAQ manual.pod", "licenses\unegg LICENSE.txt", "licenses\unalz LICENSE.txt"
 if (-not $Force -and -not ($need | Where-Object { -not (Test-Path (Join-Path $tools $_)) })) {
     Write-Output "tools: present"
     return

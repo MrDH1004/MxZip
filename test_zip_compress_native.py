@@ -99,6 +99,17 @@ class NativeZipCompressionTests(unittest.TestCase):
         with zipfile.ZipFile(self.output) as archive:
             self.assertEqual(b"native zip payload", archive.read("source/한글.txt"))
 
+    def test_global_kill_switch_overrides_native_create_opt_in(self):
+        with mock.patch.dict(os.environ, {
+            "YZIP_NATIVE_ZIP_CREATE": "1", "YZIP_DISABLE_ACCEL": "1",
+        }, clear=False), mock.patch.object(
+            zipwriter, "load_accelerator", wraps=archive_accel.load_accelerator
+        ), mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
+            ziplib.create_zip([str(self.source)], str(self.output), level=5)
+        load.assert_not_called()
+        with zipfile.ZipFile(self.output) as archive:
+            self.assertTrue(archive.namelist())
+
     def test_aes_copy_and_split_use_existing_writer_for_whole_archive(self):
         accelerator = RecordingZipCreator()
         self._create(accelerator, password="secret")
