@@ -17,16 +17,15 @@ from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
 
 import zipwriter
-from archive_accel import (
-    CAP_ZIP_EXTRACT,
-    AccelStatus,
-    NativeZipJob,
-    load_accelerator,
-)
 
 pyzipper = None  # imported only for encrypted archives
 
 Progress = Callable[[int, int, str], None]  # done_bytes, total_bytes, current_name
+
+
+def load_accelerator():
+    from archive_accel import load_accelerator as load
+    return load()
 
 
 class Cancelled(Exception):
@@ -136,7 +135,7 @@ def safe_target(root: str, name: str) -> Optional[str]:
     return target
 
 
-def _verify_native_staging(job: NativeZipJob, name: str, cancel) -> None:
+def _verify_native_staging(job, name: str, cancel) -> None:
     size = 0
     crc = 0
     with open(job.staging_path, "rb") as extracted:
@@ -293,6 +292,7 @@ class Archive:
     def _native_accelerator(self):
         if os.environ.get("YZIP_NATIVE_ZIP_EXTRACT") != "1":
             return None
+        from archive_accel import CAP_ZIP_EXTRACT
         if self._tmp is not None:
             return None
         infos = self.zf.infolist()
@@ -312,6 +312,7 @@ class Archive:
         return accelerator
 
     def _extract_native(self, accelerator, jobs, total, skipped, progress, cancel):
+        from archive_accel import AccelStatus, NativeZipJob
         native_jobs = []
         for index, name, info, target, _target_existed in jobs:
             native_jobs.append(NativeZipJob(index, part_path(target), info.file_size, info.CRC))

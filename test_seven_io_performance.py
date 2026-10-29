@@ -1,5 +1,8 @@
 """Small-file 7z I/O regressions; only isolated temporary archives are used."""
 from pathlib import Path
+import os
+import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -11,6 +14,36 @@ import py7zr
 import formats
 import lzmamt
 import ziplib
+
+
+class NativeImportBoundaryTests(unittest.TestCase):
+    def run_isolated(self, script):
+        env = dict(os.environ)
+        for name in ("YZIP_NATIVE_7Z_EXTRACT", "YZIP_NATIVE_ZIP_EXTRACT", "YZIP_NATIVE_ZIP_CREATE"):
+            env.pop(name, None)
+        return subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=Path(__file__).resolve().parent,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    def test_default_archive_imports_do_not_load_native_accelerator(self):
+        loaded = self.run_isolated(
+            "import sys, formats, ziplib, zipwriter; "
+            "print('archive_accel' in sys.modules)"
+        )
+        self.assertEqual("False", loaded)
+
+    def test_lazy_loader_imports_native_accelerator_when_called(self):
+        loaded = self.run_isolated(
+            "import sys, formats; "
+            "formats.load_accelerator(); "
+            "print('archive_accel' in sys.modules)"
+        )
+        self.assertEqual("True", loaded)
 
 
 class SevenIOTests(unittest.TestCase):

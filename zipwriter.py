@@ -16,13 +16,17 @@ import struct
 import time
 import zlib
 import zipfile
-from archive_accel import AccelStatus, CAP_ZIP_CREATE, NativeZipCreateItem, load_accelerator
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, Optional
 
 CHUNK = 1 << 20
 ZIP64_LIMIT = 0xFFFFFFFF  # lowered by tests to exercise the zip64 paths
+
+
+def load_accelerator():
+    from archive_accel import load_accelerator as load
+    return load()
 _FINAL_BLOCK = b"\x03\x00"  # empty final fixed-Huffman block ends the deflate stream
 
 
@@ -333,6 +337,7 @@ def _try_native_zip(metadata, out_path, level, workers, progress, cancel,
     if (not metadata or not allow_native or password or copy or
             os.environ.get("YZIP_NATIVE_ZIP_CREATE") != "1"):
         return False
+    from archive_accel import AccelStatus, CAP_ZIP_CREATE, NativeZipCreateItem
     native_items = []
     total_size = 0
     metadata_size = 0

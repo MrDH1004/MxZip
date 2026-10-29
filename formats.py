@@ -28,9 +28,6 @@ from typing import Callable, Iterable, Optional
 
 import lzmamt
 import ziplib
-from archive_accel import (
-    AccelStatus, CAP_7Z_EXTRACT, Native7zJob, load_accelerator,
-)
 from ziplib import BadPassword, Cancelled, Entry
 
 try:
@@ -39,6 +36,11 @@ except ImportError:  # Python < 3.14
     zstd = None
 
 Progress = Callable[[int, int, str], None]
+
+
+def load_accelerator():
+    from archive_accel import load_accelerator as load
+    return load()
 
 
 @dataclass(frozen=True)
@@ -655,6 +657,7 @@ class SevenZArchive(_Base):
     def extract(self, dest, names=None, progress=None, cancel=None, overwrite=True):
         if (os.environ.get("YZIP_NATIVE_7Z_EXTRACT") == "1" and not self.need and
                 self.joined is None and self._native_metadata_eligible()):
+            from archive_accel import CAP_7Z_EXTRACT
             accelerator = load_accelerator()
             if accelerator is not None and accelerator.capabilities & CAP_7Z_EXTRACT:
                 inspected = accelerator.inspect_7z(self.path)
@@ -843,6 +846,7 @@ class SevenZArchive(_Base):
                     pass
 
     def _extract_native(self, accelerator, dest, names, progress, cancel, overwrite):
+        from archive_accel import AccelStatus, Native7zJob
         wanted = None if names is None else set(names)
         plan = _Planner(dest, overwrite, self.path)
         planned = []
