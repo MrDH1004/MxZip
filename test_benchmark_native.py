@@ -1,3 +1,4 @@
+import io
 import json
 import tempfile
 import unittest
@@ -160,33 +161,89 @@ class BenchmarkNativeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "large-text.*5.00%"):
             benchmark.enforce_7z_regression_gate({"large-text": 10.5001}, {"large-text": 10.0})
 
-    def _gate_result(self, median):
+    def _gate_result(self, median, dataset="large-text"):
         return benchmark.BenchmarkResult(
-            case=self._case(dataset="large-text", tool="yzip", format="7z", operation="compress", threads=8),
+            case=self._case(dataset=dataset, tool="yzip", format="7z", operation="compress", threads=8),
             measured_runs=7, wall_median_seconds=median, wall_p95_seconds=median,
             cpu_median_seconds=median, peak_rss_bytes=1, archive_size_bytes=1,
             requested_threads=8, command=("tool",), sha256_tree="hash",
         )
+
+    def _baseline_summary(self, medians=None):
+        if medians is None:
+            medians = {name: 10.0 for name in benchmark.DATASET_NAMES}
+        return {
+            "schema_version": 1,
+            "seven_zip_8_thread_medians_seconds": medians,
+        }
+
+    def test_invalid_baseline_medians_fail_before_matrix_execution(self):
+        invalid_cases = {
+            "missing medians": {"schema_version": 1},
+            "wrong medians type": self._baseline_summary([]),
+            "wrong dataset set": self._baseline_summary({"large-text": 10.0}),
+            "nonpositive median": self._baseline_summary({
+                **{name: 10.0 for name in benchmark.DATASET_NAMES},
+                "large-text": 0.0,
+            }),
+            "nonfinite median": self._baseline_summary({
+                **{name: 10.0 for name in benchmark.DATASET_NAMES},
+                "large-text": float("inf"),
+            }),
+        }
+        for label, document in invalid_cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                baseline = root / "baseline.json"
+                baseline.write_text(json.dumps(document), encoding="utf-8")
+                with mock.patch.object(benchmark, "_execute_matrix", return_value=([], 0.0)) as execute, \
+                     mock.patch("sys.stderr", new_callable=io.StringIO) as stderr:
+                    code = benchmark.cli([
+                        "--output", str(root / "result.json"),
+                        "--regression-baseline", str(baseline),
+                    ])
+                self.assertNotEqual(0, code)
+                self.assertIn("regression baseline", stderr.getvalue())
+                execute.assert_not_called()
+
+    def test_valid_committed_summary_schema_reaches_matrix_execution(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            baseline = root / "baseline.json"
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
+            with mock.patch.object(
+                benchmark, "_execute_matrix", return_value=(results, 1.0)
+            ) as execute:
+                code = benchmark.cli([
+                    "--output", str(root / "result.json"),
+                    "--regression-baseline", str(baseline),
+                ])
+            self.assertEqual(0, code)
+            execute.assert_called_once_with(7)
 
     def test_cli_omission_uses_default_committed_regression_baseline(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             baseline = root / "baseline.json"
             output = root / "result.json"
-            baseline.write_text(json.dumps({"seven_zip_8_thread_medians_seconds": {"large-text": 10.0}}),
-                                encoding="utf-8")
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            results = [self._gate_result(10.0, name) for name in benchmark.DATASET_NAMES]
             with mock.patch.object(benchmark, "DEFAULT_BASELINE", baseline):
-                with mock.patch.object(benchmark, "_execute_matrix", return_value=([self._gate_result(10.0)], 1.0)):
+                with mock.patch.object(benchmark, "_execute_matrix", return_value=(results, 1.0)):
                     self.assertEqual(benchmark.cli(["--output", str(output)]), 0)
 
     def test_cli_over_five_percent_regression_exits_nonzero(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             baseline = root / "baseline.json"
-            baseline.write_text(json.dumps({"seven_zip_8_thread_medians_seconds": {"large-text": 10.0}}),
-                                encoding="utf-8")
+            baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
+            results = [
+                self._gate_result(10.5001 if name == "large-text" else 10.0, name)
+                for name in benchmark.DATASET_NAMES
+            ]
             with mock.patch.object(benchmark, "DEFAULT_BASELINE", baseline):
-                with mock.patch.object(benchmark, "_execute_matrix", return_value=([self._gate_result(10.5001)], 1.0)):
+                with mock.patch.object(benchmark, "_execute_matrix", return_value=(results, 1.0)):
                     self.assertNotEqual(benchmark.cli(["--output", str(root / "result.json")]), 0)
 
     def test_cli_refuses_summary_that_would_overwrite_regression_baseline(self):

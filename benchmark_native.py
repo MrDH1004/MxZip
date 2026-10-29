@@ -382,6 +382,41 @@ def _write_summary(path: Path, raw_path: Path, results: Sequence[BenchmarkResult
     path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
 
+def _load_regression_baseline(path: Path) -> dict[str, float]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"regression baseline could not be read as JSON: {path}: {error}") from error
+    if not isinstance(document, dict) or document.get("schema_version") != 1:
+        raise ValueError("regression baseline must use committed summary schema_version 1")
+    medians = document.get("seven_zip_8_thread_medians_seconds")
+    if not isinstance(medians, dict):
+        raise ValueError(
+            "regression baseline seven_zip_8_thread_medians_seconds must be an object"
+        )
+    expected = set(DATASET_NAMES)
+    actual = set(medians)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        unexpected = sorted(actual - expected)
+        raise ValueError(
+            "regression baseline datasets must exactly match DATASET_NAMES; "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    validated = {}
+    for name in DATASET_NAMES:
+        value = medians[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"regression baseline median for {name} must be numeric")
+        numeric = float(value)
+        if not math.isfinite(numeric) or numeric <= 0:
+            raise ValueError(
+                f"regression baseline median for {name} must be positive and finite"
+            )
+        validated[name] = numeric
+    return validated
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
@@ -411,12 +446,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--output must not overwrite the regression baseline")
     if baseline_resolved and summary_resolved == baseline_resolved:
         parser.error("--summary must not overwrite the regression baseline")
+    baseline_medians = _load_regression_baseline(baseline_path) if baseline_path else None
     args.output.parent.mkdir(parents=True, exist_ok=True)
     results, elapsed = _execute_matrix(args.runs)
     current_medians = _seven_zip_medians(results)
-    if baseline_path:
-        baseline_doc = json.loads(baseline_path.read_text(encoding="utf-8"))
-        baseline_medians = baseline_doc["seven_zip_8_thread_medians_seconds"]
+    if baseline_medians is not None:
         regressions = enforce_7z_regression_gate(current_medians, baseline_medians)
     else:
         regressions = {name: 0.0 for name in current_medians}
