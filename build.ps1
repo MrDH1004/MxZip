@@ -54,7 +54,9 @@ try {
             "--add-binary", "tools\yzip_native.dll;tools", "--add-binary", "tools\zpaq.exe;tools",
             "--add-data", "tools\licenses;tools\licenses",
             "--hidden-import", "archive_accel", "--hidden-import", "cliarchive", "--hidden-import", "nativearchive", "--hidden-import", "nativearchive_ffi",
-            "--hidden-import", "nativearchive_libarchive", "--hidden-import", "nativearchive_legacy", "--hidden-import", "minifmt",
+            "--hidden-import", "nativearchive_libarchive", "--hidden-import", "nativearchive_legacy", "--hidden-import", "minifmt", "--hidden-import", "sevenzip_header",
+            # loaded through runtimeconfig.lazy_import (a string), which PyInstaller cannot see
+            "--hidden-import", "bz2", "--hidden-import", "gzip", "--hidden-import", "tarfile", "--hidden-import", "zipfile", "--hidden-import", "hashlib", "--hidden-import", "hmac", "--hidden-import", "shutil", "--hidden-import", "uuid", "--hidden-import", "tempfile", "--hidden-import", "warnings", "--hidden-import", "compression.zstd", "--hidden-import", "lzma", "--hidden-import", "lzmamt",
             "--exclude-module", "PySide6.QtWebEngineCore",
             "--exclude-module", "PySide6.QtQml", "--exclude-module", "PySide6.Qt3DCore",
             "--exclude-module", "setuptools", "--exclude-module", "pkg_resources",

@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import shutil
 import sys
-import tempfile
 
 import formats
+from runtimeconfig import lazy_import
+
+shutil = lazy_import("shutil")  # 'e' (flat extract) only
+tempfile = lazy_import("tempfile")
 import ziplib
 
 _SIZE_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(b|k|kb|m|mb|g|gb)?$", re.I)
@@ -30,8 +32,33 @@ def _bar(done, total, name):
     sys.stdout.flush()
 
 
+class _LazyThemeFormatter(argparse.HelpFormatter):
+    """Python 3.14's HelpFormatter imports _colorize (~5 ms) as soon as a parser exists. The theme is only
+    needed to print help or an error, so it is resolved then; output is plain (no colour codes)."""
+
+    def __init__(self, prog, indent_increment=2, max_help_position=24, width=None, color=True):
+        if width is None:  # what HelpFormatter asks shutil for; shutil itself costs ~6 ms to import
+            try:
+                width = int(os.environ.get("COLUMNS", 0)) or os.get_terminal_size().columns
+            except (ValueError, OSError):
+                width = 80
+            width -= 2
+        super().__init__(prog, indent_increment, max_help_position, width, color)
+
+    def _set_color(self, color):
+        self._decolor = lambda text: text
+
+    def __getattr__(self, name):
+        if name == "_theme":
+            from _colorize import get_theme
+            self._theme = get_theme(force_no_color=True).argparse
+            return self._theme
+        raise AttributeError(name)
+
+
 def build_parser():
-    p = argparse.ArgumentParser(prog="yzip", description="archiver: creates zip/7z/tar.*/gz/bz2/xz/zst, reads all of them")
+    p = argparse.ArgumentParser(prog="yzip", description="archiver: creates zip/7z/tar.*/gz/bz2/xz/zst, reads all of them",
+                                formatter_class=_LazyThemeFormatter)
     p.add_argument("command", choices=["a", "c", "x", "e", "t", "l", "d", "rn"])
     p.add_argument("archive")
     p.add_argument("files", nargs="*")

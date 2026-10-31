@@ -8,32 +8,33 @@ EGG and ALZ use the bundled Rust module in-process. Other 7-Zip-only formats rem
 """
 from __future__ import annotations
 
-import bz2
-import gzip
 import io
-import lzma
 import os
 import runtimeconfig
+warnings = runtimeconfig.lazy_import("warnings")  # only for rare warnings
+zipfile = runtimeconfig.lazy_import("zipfile")  # ~12 ms; 7z/tar runs never touch it
 import re
-import tarfile
 import threading
 import time
-import warnings
 import sys
-import zipfile
 import zlib
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
+from runtimeconfig import lazy_import
+from runtimeconfig import ThreadPoolExecutor  # threading-only pool: no concurrent.futures import
+from collections.abc import Callable, Iterable  # not typing: ~2 ms to import
 
-import lzmamt
+bz2 = lazy_import("bz2")  # used only for those formats; loaded on first use
+gzip = lazy_import("gzip")
+tarfile = lazy_import("tarfile")
+lzma = lazy_import("lzma")  # 7z / xz only: a ZIP run never loads liblzma
+lzmamt = lazy_import("lzmamt")
+
 import ziplib
 from ziplib import BadPassword, Cancelled, Entry
 
-try:
-    from compression import zstd
-except ImportError:  # Python < 3.14
-    zstd = None
+# compression.zstd (Python 3.14) is loaded on first use; whether it exists is known from its C module's spec
+import importlib.util as _ilu
+
+zstd = lazy_import("compression.zstd") if _ilu.find_spec("_zstd") is not None else None
 
 Progress = Callable[[int, int, str], None]
 
@@ -43,14 +44,34 @@ def load_accelerator():
     return load()
 
 
-@dataclass(frozen=True)
 class Fmt:
-    id: str
-    label: str
-    ext: str
-    password: bool = False
-    split: bool = False
-    single: bool = False  # compresses exactly one file (a stream, not an archive)
+    """A format the user can create. Immutable, ==, hash and repr like the former @dataclass(frozen=True),
+    without importing dataclasses (and inspect) on every start. single: compresses exactly one file."""
+    _FIELDS = ("id", "label", "ext", "password", "split", "single")
+    __match_args__ = _FIELDS
+
+    def __init__(self, id: str, label: str, ext: str, password: bool = False, split: bool = False,
+                 single: bool = False):
+        for k, v in zip(self._FIELDS, (id, label, ext, password, split, single)):
+            object.__setattr__(self, k, v)
+
+    def __setattr__(self, key, value):
+        raise AttributeError(f"cannot assign to field {key!r}")
+
+    def __delattr__(self, key):
+        raise AttributeError(f"cannot delete field {key!r}")
+
+    def _fields(self):
+        return tuple(getattr(self, k) for k in self._FIELDS)
+
+    def __eq__(self, other):
+        return self._fields() == other._fields() if type(other) is type(self) else NotImplemented
+
+    def __hash__(self):
+        return hash(self._fields())
+
+    def __repr__(self):
+        return "Fmt(" + ", ".join(f"{k}={getattr(self, k)!r}" for k in self._FIELDS) + ")"
 
 
 FORMATS = [
@@ -278,13 +299,14 @@ class _Planner:
     def __init__(self, dest: str, overwrite, archive: Optional[str] = None):
         self.root = os.path.realpath(dest)
         os.makedirs(self.root, exist_ok=True)
+        self.resolve = ziplib.TargetResolver(self.root)
         self.overwrite = overwrite
         # the archive being read is never a target: 'backup' (a gzip without extension) would unpack onto itself
         self.taken: set[str] = {os.path.realpath(archive).lower()} if archive else set()
         self.given: dict[str, str] = {}  # target (lower) -> member name it was handed to in this run
 
     def target(self, name: str, is_dir: bool) -> Optional[str]:
-        t = ziplib.safe_target(self.root, name)
+        t = self.resolve(name)
         if t is None:
             return None
         if is_dir:
@@ -582,9 +604,23 @@ class _Discard:
 
 
 class SevenZArchive(_Base):
+    fast = None  # sevenzip_header.Header when the archive needs no py7zr (listing, extracting, testing)
+
     def __init__(self, path: str, password: Optional[str] = None):
-        import py7zr
         self.path, self.password = path, password or None
+        import sevenzip_header
+        try:
+            h = sevenzip_header.read(path, self.password)
+        except sevenzip_header.NeedPassword as e:
+            raise BadPassword(str(e))
+        except FileNotFoundError:
+            raise
+        except Exception:  # another layout or damage: py7zr decides, with its own messages
+            h = None
+        if h is not None:
+            self.fast, self.infos, self.need = h, h.files, h.need_password
+            return
+        import py7zr
         try:
             with py7zr.SevenZipFile(path, password=self.password) as z:
                 self.infos = z.list()
@@ -643,6 +679,17 @@ class SevenZArchive(_Base):
                 raise BadPassword(str(e))
             raise
 
+    def _run_fast(self, fn):
+        """_run for the py7zr-free path: decoder errors of an encrypted archive mean a wrong key."""
+        try:
+            return fn()
+        except (Cancelled, KeyboardInterrupt, OSError):
+            raise
+        except Exception as e:
+            if self.need:
+                raise BadPassword(str(e))
+            raise
+
     def _native_metadata_eligible(self) -> bool:
         seen = set()
         for fi in self.infos:
@@ -663,7 +710,10 @@ class SevenZArchive(_Base):
                 inspected = accelerator.inspect_7z(self.path)
                 if inspected.supported and self._extract_native(accelerator, dest, names, progress, cancel, overwrite):
                     return
-        from py7zr.io import NullIO, Py7zIO, WriterFactory
+        if self.fast is None:
+            from py7zr.io import NullIO, Py7zIO, WriterFactory
+        else:
+            Py7zIO = WriterFactory = object  # read without py7zr: its writer interfaces are not needed
         wanted = None if names is None else set(names)
         plan = _Planner(dest, overwrite, self.path)
         targets = {}  # position in the archive's file list -> (target, info); names may repeat
@@ -683,11 +733,18 @@ class SevenZArchive(_Base):
         memory_used = 0
         memory_lock = threading.Lock()
 
+        made_dirs: set[str] = set()  # folders already created: one makedirs per folder, not per file
+        handle_times = len(targets) >= 32  # SetFileTime needs ctypes (~8 ms to import): only for many files
+        timed: set[str] = set()  # targets whose time was set on the open handle while committing
+
         class Out(Py7zIO):
-            def __init__(self, name, path, expected):
+            def __init__(self, name, path, expected, mtime=None):
                 nonlocal memory_used
-                self.name, self.path = name, path
-                os.makedirs(os.path.dirname(path), exist_ok=True)
+                self.name, self.path, self.mtime = name, path, mtime
+                folder = os.path.dirname(path)
+                if folder not in made_dirs:
+                    os.makedirs(folder, exist_ok=True)
+                    made_dirs.add(folder)
                 self.part = ziplib.part_path(path)  # moved over the target only when the whole archive succeeded
                 self.reserved = 0
                 self.memory = False
@@ -753,15 +810,37 @@ class SevenZArchive(_Base):
                     self.release()
 
             def commit(self):
+                if cancel and cancel():
+                    raise Cancelled()
                 if self.memory:
+                    # a small file goes straight to a target that does not exist yet (no part file, no rename,
+                    # time set on the handle); an existing target is still replaced only through the part file
+                    try:
+                        dst = open(self.path, "xb")
+                    except FileExistsError:
+                        dst = None
+                    if dst is not None:
+                        try:
+                            with dst, self.f.getbuffer() as data:
+                                dst.write(data)
+                                if self.mtime is not None and handle_times:
+                                    dst.flush()
+                                    ziplib.set_file_mtime(dst, self.mtime)
+                        except BaseException:
+                            if os.path.exists(self.path):
+                                os.remove(self.path)
+                            raise
+                        if self.mtime is not None and handle_times:
+                            timed.add(self.path.lower())
+                        self.dispose()
+                        return
                     with self.f.getbuffer() as data:
                         with open(self.part, "wb") as dst:
                             dst.write(data)
                 else:
                     self.close()
-                if cancel and cancel():
-                    raise Cancelled()
                 ziplib.finish_part(self.part, self.path)
+                timed.discard(self.path.lower())  # a repeated name replaced the copy whose time was set
                 self.dispose()
 
         def make(k):
@@ -771,7 +850,8 @@ class SevenZArchive(_Base):
                 if os.path.exists(old.part):
                     os.remove(old.part)
             t, fi = targets[k]
-            w = opened[k] = Out(fi.filename, t, fi.uncompressed or 0)
+            w = opened[k] = Out(fi.filename, t, fi.uncompressed or 0,
+                                fi.creationtime.timestamp() if fi.creationtime else None)
             return w
 
         class Factory(WriterFactory):
@@ -793,8 +873,15 @@ class SevenZArchive(_Base):
             if folders is not None:  # Out counts progress itself; the sink only reports via the counter
                 lzmamt.fast_extract(self.path, folders, self.password,
                                     lambda fi: make(pos[fi.id]) if pos.get(fi.id) in targets else None, _NoCount())
+
+        def go_fast():  # entries are positions in self.infos already
+            lzmamt.fast_extract(self.path, self.fast.folders, self.password,
+                                lambda fi: make(fi.id) if fi.id in targets else None, _NoCount())
         try:
-            self._run(go)
+            if self.fast is not None:
+                self._run_fast(go_fast)
+            else:
+                self._run(go)
             # Different paths can flush/replace concurrently. A repeated target
             # stays in one ordered group so the last archive member still wins.
             groups = {}
@@ -838,7 +925,7 @@ class SevenZArchive(_Base):
                     exc.add_note(f"Could not remove {w.part}: {cleanup_error}")
             raise
         for k, (t, fi) in targets.items():
-            if fi.creationtime:
+            if fi.creationtime and t.lower() not in timed:
                 ts = fi.creationtime.timestamp()
                 try:
                     os.utime(t, (ts, ts))
@@ -1000,12 +1087,15 @@ class SevenZArchive(_Base):
             progress(0, 1, os.path.basename(self.path))
 
         def go(py7zr):
-            with py7zr.SevenZipFile(self.path, password=self.password) as z:
-                try:
-                    folders = lzmamt.fast_plan(z)
-                except lzmamt.Unsupported:
-                    bad = z.testzip()
-                    return [bad] if bad else []
+            if self.fast is not None:
+                folders = self.fast.folders
+            else:
+                with py7zr.SevenZipFile(self.path, password=self.password) as z:
+                    try:
+                        folders = lzmamt.fast_plan(z)
+                    except lzmamt.Unsupported:
+                        bad = z.testzip()
+                        return [bad] if bad else []
             counter = _Counter(sum(fi.uncompressed or 0 for fi in self.infos), progress, cancel)  # also cancels
             try:
                 lzmamt.fast_extract(self.path, folders, self.password, lambda fi: _Discard(), counter)
@@ -1015,7 +1105,7 @@ class SevenZArchive(_Base):
                 return [str(e)]
             return []
         try:
-            bad = self._run(go)
+            bad = self._run_fast(lambda: go(None)) if self.fast is not None else self._run(go)
         except (BadPassword, Cancelled):
             raise
         except Exception:

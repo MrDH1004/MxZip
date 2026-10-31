@@ -1,16 +1,42 @@
 """Engine runtime limits and leased yzip-only temporary workspaces (no appcore import)."""
 from __future__ import annotations
 
+import collections
 import os
 import re
-import shutil
-import tempfile
+import sys
 import threading
-import uuid
+
+
+def lazy_import(name: str):
+    """The module, executed on first attribute access (importlib's LazyLoader). For modules only some runs
+    need (tarfile, bz2, gzip, hashlib, ...): together ~25 ms of every start of the command line tool."""
+    if name in sys.modules:
+        return sys.modules[name]
+    import importlib.util
+    spec = importlib.util.find_spec(name)
+    loader = importlib.util.LazyLoader(spec.loader)
+    spec.loader = loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    loader.exec_module(module)
+    return module
+
+
+shutil = lazy_import("shutil")
+tempfile = lazy_import("tempfile")
+uuid = lazy_import("uuid")
 
 _lock = threading.RLock()
 _threads = 0
-_system_temp = tempfile.gettempdir()
+_system_temp = None  # the system temp folder, read before configure() points tempfile elsewhere
+
+
+def _system_temp_dir() -> str:
+    global _system_temp
+    if _system_temp is None:
+        _system_temp = tempfile.gettempdir()
+    return _system_temp
 _sessions: dict[str, tuple[str, object]] = {}
 _MARKER = b"yzip-temp-session-v1\n"
 
@@ -49,7 +75,7 @@ def validate(worker_threads: int = 0, temp_dir: str = "") -> str:
         raise ValueError("worker_threads must be an integer from 0 to 256")
     if not isinstance(temp_dir, str) or "\0" in temp_dir:
         raise ValueError("temp_dir must be a path string")
-    base = os.path.realpath(os.path.expanduser(temp_dir or _system_temp))
+    base = os.path.realpath(os.path.expanduser(temp_dir or _system_temp_dir()))
     root = os.path.join(base, "yzip-temp")
     if _redirect(root):
         raise ValueError("yzip-temp must not be a link or junction")
@@ -67,6 +93,7 @@ def configure(worker_threads: int = 0, temp_dir: str = "") -> str:
     including after switching roots, protecting open archives and background jobs.
     """
     global _threads
+    _system_temp_dir()  # remember the system temp before this session becomes tempfile.tempdir
     root = validate(worker_threads, temp_dir)
     with _lock:
         if _redirect(root):
@@ -171,3 +198,153 @@ def cleanup_temp(*, dry_run: bool = False, paths=None) -> dict | list[str]:
                 except OSError:
                     result["errors"] += 1
     return candidates if dry_run else result
+
+
+class CancelledError(Exception):
+    """result() of a job cancelled before it started."""
+
+
+class _Future:
+    __slots__ = ("_done", "_state", "_value")
+
+    def __init__(self):
+        self._done = threading.Event()
+        self._state = "pending"  # pending -> running -> finished | cancelled
+        self._value = None
+
+    def cancel(self) -> bool:
+        with _pool_lock:
+            if self._state != "pending":
+                return self._state == "cancelled"
+            self._state = "cancelled"
+        self._done.set()
+        return True
+
+    def cancelled(self) -> bool:
+        return self._state == "cancelled"
+
+    def done(self) -> bool:
+        return self._done.is_set()
+
+    def result(self, timeout=None):
+        if not self._done.wait(timeout):
+            raise TimeoutError()
+        if self._state == "cancelled":
+            raise CancelledError()
+        if isinstance(self._value, _Raised):
+            raise self._value.exc
+        return self._value
+
+
+class _Raised:
+    __slots__ = ("exc",)
+
+    def __init__(self, exc):
+        self.exc = exc
+
+
+_pool_lock = threading.Lock()
+
+
+class _PoolState:
+    """What worker threads share with their pool. Workers never reference the pool object itself, so a pool
+    that is dropped without shutdown() is collected and its idle threads end (as in concurrent.futures)."""
+    __slots__ = ("queue", "cond", "idle", "closed")
+
+    def __init__(self):
+        self.queue = collections.deque()
+        self.cond = threading.Condition()
+        self.idle = 0
+        self.closed = False
+
+
+def _pool_worker(state: _PoolState):
+    while True:
+        with state.cond:
+            while not state.queue and not state.closed:
+                state.idle += 1
+                state.cond.wait()
+                state.idle -= 1
+            if not state.queue:
+                return
+            future, fn, args, kwargs = state.queue.popleft()
+        with _pool_lock:
+            runnable = future._state == "pending"
+            if runnable:
+                future._state = "running"
+        if runnable:
+            try:
+                future._value = fn(*args, **kwargs)
+            except BaseException as e:  # handed to result(), like concurrent.futures
+                future._value = _Raised(e)
+            future._state = "finished"
+            future._done.set()
+        del future, fn, args, kwargs  # keep nothing of a finished job alive (it may own open files)
+
+
+class ThreadPoolExecutor:
+    """The part of concurrent.futures.ThreadPoolExecutor yzip uses (submit / map / shutdown / with, futures with
+    result / cancel), built on threading alone. Importing concurrent.futures pulls in logging, traceback and
+    inspect: 20-50 ms of every run that starts a pool, which was most of the gap to Bandizip on small archives.
+    Threads start on demand up to max_workers (daemon threads)."""
+
+    def __init__(self, max_workers=None, thread_name_prefix=""):
+        self._max = max(1, max_workers or worker_count())
+        self._prefix = thread_name_prefix or "yzip-pool"
+        self._state = _PoolState()
+        self._threads = []
+
+    def submit(self, fn, *args, **kwargs):
+        future = _Future()
+        st = self._state
+        with st.cond:
+            if st.closed:
+                raise RuntimeError("cannot schedule new futures after shutdown")
+            st.queue.append((future, fn, args, kwargs))
+            if st.idle == 0 and len(self._threads) < self._max:
+                t = threading.Thread(target=_pool_worker, args=(st,), daemon=True,
+                                     name=f"{self._prefix}_{len(self._threads)}")
+                self._threads.append(t)
+                t.start()
+            else:
+                st.cond.notify()
+        return future
+
+    def map(self, fn, *iterables):
+        futures = [self.submit(fn, *args) for args in zip(*iterables)]
+
+        def results():
+            try:
+                for f in futures:
+                    yield f.result()
+            finally:
+                for f in futures:
+                    f.cancel()
+        return results()
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        st = self._state
+        with st.cond:
+            st.closed = True
+            if cancel_futures:
+                while st.queue:
+                    st.queue.popleft()[0].cancel()
+            st.cond.notify_all()
+        if wait:
+            for t in self._threads:
+                if t is not threading.current_thread():
+                    t.join()
+
+    def __del__(self):  # dropped without shutdown(): let idle workers finish the queue and end
+        st = getattr(self, "_state", None)
+        if st is not None:
+            with st.cond:
+                st.closed = True
+                st.cond.notify_all()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.shutdown(wait=True)
+        return False

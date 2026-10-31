@@ -2,14 +2,24 @@ import os
 import subprocess
 import tempfile
 import unittest
-from dataclasses import replace
+from dataclasses import is_dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import py7zr
 
 import archive_accel
 import formats
+
+
+def _clone(info, **changes):
+    """A changed copy of a 7z entry: py7zr's FileInfo dataclass or a sevenzip_header.Entry."""
+    if is_dataclass(info):
+        return replace(info, **changes)
+    fields = {k: getattr(info, k) for k in ("id", "filename", "is_directory", "is_file", "is_symlink",
+                                            "uncompressed", "compressed", "crc32", "creationtime", "emptystream")}
+    return SimpleNamespace(**{**fields, **changes})
 
 
 class Native7zBindingTests(unittest.TestCase):
@@ -267,15 +277,16 @@ class Native7zIntegrationTests(unittest.TestCase):
     def test_duplicate_and_symlink_metadata_select_whole_python_fallback(self):
         archive = self.make_archive()
         for mutate in (
-            lambda infos: [infos[0], replace(infos[1], filename=infos[0].filename)],
-            lambda infos: [replace(infos[0], is_file=False, is_symlink=True), infos[1]],
+            lambda infos: [infos[0], _clone(infos[1], filename=infos[0].filename)],
+            lambda infos: [_clone(infos[0], is_file=False, is_symlink=True), infos[1]],
         ):
             fake = mock.Mock(capabilities=archive_accel.CAP_7Z_EXTRACT)
             with formats.SevenZArchive(str(archive)) as opened:
                 opened.infos = mutate(opened.infos)
                 with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
                      mock.patch.object(formats, "load_accelerator", return_value=fake), \
-                     mock.patch.object(opened, "_run", side_effect=RuntimeError("python fallback")):
+                     mock.patch.object(opened, "_run", side_effect=RuntimeError("python fallback")), \
+                     mock.patch.object(opened, "_run_fast", side_effect=RuntimeError("python fallback")):
                     with self.assertRaisesRegex(RuntimeError, "python fallback"):
                         opened.extract(str(self.root / "fallback"))
             fake.inspect_7z.assert_not_called()

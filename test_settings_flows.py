@@ -215,7 +215,9 @@ class SettingsFlows(unittest.TestCase):
         with mock.patch.object(gui.ziplib, "safe_target", wraps=gui.ziplib.safe_target) as safe:
             self.assertEqual(self.win._extract_collisions(str(dest), ["b.txt"]), [])
             self.assertEqual(safe.call_args_list, [mock.call(os.path.realpath(dest), "b.txt")])
+        # every path rejected by the safety check (safe_target, and the per-extraction resolver ZIP uses)
         with mock.patch.object(gui.ziplib, "safe_target", return_value=None), \
+                mock.patch.object(gui.ziplib.TargetResolver, "__call__", return_value=None), \
                 mock.patch.object(self.win, "_collision_mode") as prompt, \
                 mock.patch.object(gui, "run_job", side_effect=self.immediate_job):
             self.assertTrue(self.win._do_extract(str(dest), None, "ask"))

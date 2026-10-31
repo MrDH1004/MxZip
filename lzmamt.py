@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import collections
 import functools
-import hashlib
 import lzma
 import os
 import runtimeconfig
+hashlib = runtimeconfig.lazy_import("hashlib")  # 7zAES key derivation only
 import struct
+import time
 import zlib
-from concurrent.futures import ThreadPoolExecutor
+from runtimeconfig import ThreadPoolExecutor  # threading-only pool: no concurrent.futures import
 
 _DICT = [1 << 18, 1 << 20, 2 << 20, 4 << 20, 4 << 20, 8 << 20, 8 << 20, 16 << 20, 32 << 20, 64 << 20]
 _MEM_BUDGET = 2 << 30
@@ -29,7 +30,9 @@ def plan(preset: int, total: int) -> tuple[int, int]:
     d = _DICT[preset]
     cpu = runtimeconfig.worker_count()
     workers = max(1, min(cpu, _MEM_BUDGET // (d * 15)))
-    block = max(1 << 20, min(4 * d, max(d, -(-total // (workers * 3)))))
+    # floor d/4, not d: an input of one or two dictionaries (8 MB at level 5) would otherwise be a single block
+    # on a single core; a quarter-dictionary block still keeps nearly all matches of typical data
+    block = max(1 << 20, min(4 * d, max(d // 4, -(-total // (workers * 3)))))
     return block, workers
 
 
@@ -67,11 +70,32 @@ class _Ordered:
         self.pool.shutdown(wait=True, cancel_futures=True)
 
 
+def _incompressible(data) -> bool:
+    """Already-compressed data (JPEG, video, archives, random): zlib's fastest level, ~60 MB/s against LZMA's
+    ~3.5 MB/s on such input, saves less than 2 %. LZMA2 would end up storing it anyway (7-Zip/xz fall back to
+    uncompressed chunks), only after spending the full encoder time on it."""
+    if len(data) < 64 << 10:
+        return False
+    return len(zlib.compress(data, 1)) >= len(data) * 0.98
+
+
+def _stored_lzma2(data) -> bytes:
+    """data as LZMA2 uncompressed chunks (control 1 = with dictionary reset, 2 = without; <= 64 KiB each), so
+    the block stays independent like an encoded one. The next encoded block starts with its own full reset."""
+    out = bytearray()
+    for i in range(0, len(data), 1 << 16):
+        chunk = data[i:i + (1 << 16)]
+        out += bytes((1 if i == 0 else 2,)) + struct.pack(">H", len(chunk) - 1) + chunk
+    return bytes(out)
+
+
 def _raw_lzma2(preset):
     """Block compressor: raw LZMA2 without its end marker (one 0x00 is written after the last block)."""
     filters = _filters(preset)
 
     def go(data):
+        if _incompressible(data):
+            return _stored_lzma2(data)
         # Independent blocks cannot refer back beyond their own input. Avoid
         # reserving a preset-sized match finder for each small parallel job.
         bounded = [dict(filters[0], dict_size=min(_DICT[preset], max(len(data), 1 << 12)))]
@@ -490,11 +514,60 @@ class _Sink:
             raise ValueError("7z data ends early")
 
 
+class _InlineFuture:
+    def __init__(self, fn, args):
+        self.value = fn(*args)
+
+    def result(self):
+        return self.value
+
+
+class _AdaptivePool:
+    """Runs decode jobs on this thread and starts a thread pool only once the remaining work, estimated from the
+    time per packed byte so far, exceeds ~5 ms (the threading-only pool costs ~1 ms to start). Small or trivially decoded archives (stored chunks, repetitive
+    data) never pay for concurrent.futures + logging (~10-20 ms to import) and thread start-up; real work still
+    spreads over all cores after its first piece."""
+
+    def __init__(self, workers: int, packed_total: int):
+        self.workers, self.left, self.pool = workers, packed_total, None
+        self.spent, self.done = 0.0, 0
+
+    def submit(self, fn, piece, *rest):
+        if (self.pool is None and self.workers > 1 and self.done
+                and self.spent / self.done * self.left > 0.005):
+            self.pool = ThreadPoolExecutor(self.workers)
+        self.left -= len(piece)
+        if self.pool is not None:
+            return self.pool.submit(fn, piece, *rest)
+        started = time.perf_counter()
+        try:
+            return _InlineFuture(fn, (piece, *rest))
+        finally:
+            self.spent += time.perf_counter() - started
+            self.done += len(piece)
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        if self.pool is not None:
+            self.pool.shutdown(wait=wait, cancel_futures=cancel_futures)
+
+
+class _InlinePool:
+    """submit() runs the job right away; the same interface fast_extract uses from ThreadPoolExecutor."""
+
+    def submit(self, fn, *args):
+        return _InlineFuture(fn, args)
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        pass
+
+
 def fast_extract(path: str, folders: list[dict], password, open_out, counter) -> None:
     """Decode folders from fast_plan. open_out(file_info) returns a writable object (close() is called) or
     None to skip that member; LZMA2 pieces that start with a dictionary reset decode in parallel."""
     workers = runtimeconfig.worker_count()
-    pool = ThreadPoolExecutor(workers)
+    # small archives decode on this thread: a pool (concurrent.futures + logging, ~10 ms to import) only pays
+    # off once there is real work to spread
+    pool = _AdaptivePool(workers, sum(fo["packsize"] for fo in folders))
     try:
         with open(path, "rb") as f:
             for fo in folders:

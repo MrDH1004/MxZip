@@ -64,7 +64,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           YZIP_NO_UPDATE: "1"
-        run: python -W ignore -m unittest test_release_version test_ziprepair test_ziplib test_zipwriter test_formats test_nativearchive test_moreformats test_updater test_archive_accel test_zip_native test_7z_native test_zip_compress_native test_zip_extract_perf test_seven_io_performance test_zipwriter_performance test_package_native test_hard_exit
+        run: python -W ignore -m unittest test_release_version test_ziprepair test_ziplib test_zipwriter test_formats test_nativearchive test_moreformats test_updater test_archive_accel test_zip_native test_7z_native test_zip_compress_native test_zip_extract_perf test_seven_io_performance test_zipwriter_performance test_package_native test_hard_exit test_sevenzip_header
 
       - name: Preferences tests
         env:

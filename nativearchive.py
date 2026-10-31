@@ -8,8 +8,6 @@ manager support.
 """
 from __future__ import annotations
 
-from typing import Optional
-
 
 NATIVE_KINDS = frozenset({
     "rar", "cab", "iso", "udf", "img", "lzh", "lha", "cpio", "rpm", "deb", "egg", "alz",

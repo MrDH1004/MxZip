@@ -8,17 +8,18 @@ ciphertext, applied in order by the writer thread. Every entry gets its own salt
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import os
 import runtimeconfig
+zipfile = runtimeconfig.lazy_import("zipfile")  # ~12 ms; 7z/tar runs never touch it
+
+hashlib = runtimeconfig.lazy_import("hashlib")  # AES / checksums only
+hmac = runtimeconfig.lazy_import("hmac")
 import struct
 import time
 import zlib
-import zipfile
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Optional
+from runtimeconfig import ThreadPoolExecutor  # threading-only pool: no concurrent.futures import
+from collections.abc import Callable  # not typing: ~2 ms to import
 
 CHUNK = 1 << 20
 ZIP64_LIMIT = 0xFFFFFFFF  # lowered by tests to exercise the zip64 paths

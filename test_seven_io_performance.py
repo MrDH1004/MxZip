@@ -104,6 +104,9 @@ class SevenIOTests(unittest.TestCase):
             folders[-1]["members"][-1] = (fi, size, crc ^ 1)
             return folders
 
+        if archive.fast is not None:  # read without py7zr: the plan comes from sevenzip_header
+            fi, size, crc = archive.fast.folders[-1]["members"][-1]
+            archive.fast.folders[-1]["members"][-1] = (fi, size, crc ^ 1)
         with mock.patch.object(formats, "_SEVEN_MEMORY_LIMIT", 5), \
                 mock.patch.object(lzmamt, "fast_plan", side_effect=bad_crc):
             with self.assertRaisesRegex(ValueError, "CRC mismatch"):
