@@ -19,7 +19,7 @@ class ReleaseVersionContractTests(unittest.TestCase):
         self.assertEqual("1.0.22", version.__version__)
         notes = ROOT / ".github" / f"release-notes-{version.__version__}.md"
         self.assertTrue(notes.is_file(), notes)
-        self.assertEqual(f"# yzip {version.__version__}", notes.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(f"# MxZip {version.__version__}", notes.read_text(encoding="utf-8").splitlines()[0])
 
     def test_make_version_files_executes_from_version_py_into_temp_outputs(self):
         with tempfile.TemporaryDirectory() as folder:

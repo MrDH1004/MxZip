@@ -179,7 +179,7 @@ jobs:
           if ($tags -notcontains $tag) {
             $notes = ".github\release-notes-$v.md"
             if (-not (Test-Path $notes)) { $notes = '.github\release-signing.md' }
-            gh release create $tag --title "yzip $v" --notes-file $notes --generate-notes
+            gh release create $tag --title "MxZip $v" --notes-file $notes --generate-notes
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
           }
           gh release upload $tag "dist\$name" "dist\$name.sha256" --clobber
