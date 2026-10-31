@@ -1,8 +1,8 @@
 """Generate the MxZip app icon (yzip.ico) with Pillow only.
 
-The mark is YMX's chevron cube (traced from ymx.co.kr/media/logo-dark.png) on the site's navy (#13284F): yellow
-diamond, sky-to-blue upper chevron, blue side bar, light-blue lower chevron. A zipper closes the gap between the
-two chevrons: white interlocking teeth under a yellow slider, so the cube reads as a packed (zipped) box.
+The mark is YMX's chevron cube in the logo's own colours (traced from ymx.co.kr/media/logo-dark.png) on a white
+tile: yellow diamond, sky-to-blue upper chevron, blue side bar, navy lower chevron. A zipper closes the gap
+between the two chevrons: navy interlocking teeth under a yellow slider, so the cube reads as a packed (zipped) box.
 
 Usage: python make_icon.py [preview.png]
 """
@@ -20,12 +20,13 @@ HERE = Path(__file__).resolve().parent
 SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
 SS = 4  # supersampling factor
 
-TILE = (19, 40, 79)          # ymx.co.kr navy
+TILE = (255, 255, 255)
+TILE_EDGE = (214, 222, 234)  # keeps the white tile visible on white backgrounds
 YELLOW = (254, 207, 25)
 SKY, BLUE = (61, 162, 219), (16, 100, 174)
-BAR = (60, 110, 200)
-LOWER_C = (76, 128, 210)
-TEETH = (255, 255, 255)
+BAR = (30, 76, 154)
+LOWER_C = (29, 63, 121)
+TEETH = (29, 63, 121)
 
 # YMX mark, mark box 202 x 229
 DIAMOND = [(100, 2), (148, 27), (100, 52), (54, 27)]
@@ -52,7 +53,8 @@ def render(size: int) -> Image.Image:
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     pad = (0.03 if size <= 24 else 0.06) * n  # small sizes use more of the square
-    draw.rounded_rectangle([pad, pad, n - pad, n - pad], radius=0.2 * n, fill=TILE + (255,))
+    draw.rounded_rectangle([pad, pad, n - pad, n - pad], radius=0.2 * n, fill=TILE + (255,),
+                           outline=TILE_EDGE + (255,), width=max(SS, n // 128))
     fill = 0.72 if size <= 24 else 0.66
     scale = (n - 2 * pad) * fill / 229
     ox, oy = n / 2 - 101 * scale, n / 2 - 114.5 * scale
