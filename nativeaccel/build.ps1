@@ -39,7 +39,7 @@ $source = Join-Path $PSScriptRoot "yzip_accel.cpp"
 $sdkRoot = Join-Path $tools "7zip-src"
 $crcSource = Join-Path $sdkRoot "C\7zCrc.c"
 $crcOptSource = Join-Path $sdkRoot "C\7zCrcOpt.c"
-$command = "call `"$vcvars`" >nul && cd /d `"$intermediate`" && cl /nologo /LD /std:c++17 /EHsc /O2 /GL /W4 /WX /MT /utf-8 /I`"$sdkRoot`" `"$source`" `"$crcSource`" `"$crcOptSource`" /link /LTCG /MACHINE:X64 /OUT:`"$builtDll`""
+$command = "call `"$vcvars`" >nul 2>nul && cd /d `"$intermediate`" && cl /nologo /LD /std:c++17 /EHsc /O2 /GL /W4 /WX /MT /utf-8 /I`"$sdkRoot`" `"$source`" `"$crcSource`" `"$crcOptSource`" /link /LTCG /MACHINE:X64 /OUT:`"$builtDll`""
 & cmd.exe /d /s /c $command
 if ($LASTEXITCODE) { throw "MSVC x64 native accelerator build failed (exit $LASTEXITCODE)" }
 if (-not (Test-Path -LiteralPath $builtDll -PathType Leaf)) { throw "MSVC reported success but DLL is missing: $builtDll" }

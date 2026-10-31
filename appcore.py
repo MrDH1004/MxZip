@@ -354,3 +354,24 @@ def quick_compress(paths: list[str], out: str) -> Job:
     reveal = os.path.dirname(os.path.abspath(target)) if len(targets) > 1 else target
     return Job(run, f"압축하기 {os.path.basename(target)}",
                reveal, "압축 작업을 완료했습니다.")
+
+
+def hard_exit(code: int):
+    """Leave the process without DLL_PROCESS_DETACH. os._exit() still runs ExitProcess, which calls the static
+    destructors of every loaded DLL; shiboken6's crashed there intermittently (0xC0000005, a null read inside
+    shiboken6.abi3.dll under ntdll's loader shutdown, after the job had finished and its files were closed).
+    TerminateProcess skips those notifications. Nothing yzip writes depends on them: the archive and the logs
+    are closed by then, and only Python's own stdio buffers need flushing."""
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream and stream.flush()
+        except Exception:
+            pass
+    if os.name == "nt":
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        kernel32.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        kernel32.TerminateProcess(kernel32.GetCurrentProcess(), code & 0xFFFFFFFF)
+    os._exit(code)

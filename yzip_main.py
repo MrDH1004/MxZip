@@ -38,6 +38,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    code = main()
-    sys.stdout and sys.stdout.flush()
-    os._exit(code)
+    import appcore
+    try:
+        code = main()
+    except BaseException as e:  # still leave through hard_exit: a normal exit runs shiboken6's DLL detach
+        if not isinstance(e, SystemExit):
+            appcore.log_exception(e)
+        code = e.code if isinstance(e, SystemExit) and isinstance(e.code, int) else 1
+    appcore.hard_exit(code)

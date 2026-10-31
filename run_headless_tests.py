@@ -13,6 +13,7 @@ jobs = [("core unit tests", [sys.executable, "-W", "ignore", "-m", "unittest", "
         ("other formats (7z, tar.*, gz/bz2/xz/zst, bz.exe interop)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_formats"]),
         ("native archives (RAR/ISO/CAB/EGG/ALZ)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_nativearchive"]),
         ("right-click quick compress entry (Qt only when needed)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_quick_entry"]),
+        ("exit path (no DLL detach)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_hard_exit"]),
         ("updater (local fake GitHub API, SHA-256 check)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_updater"]),
         ("file associations (throwaway .yzt)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_assoc"]),
         ("cli smoke", [sys.executable, "-W", "ignore", "smoke_test.py"]),

@@ -442,6 +442,8 @@ class Task5BenchmarkEvidenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         path = Path(".superpowers/sdd/2026-10-28-native-performance-hybrid/task5_bench.py")
+        if not path.is_file():  # local planning artifact, not in git (CI and fresh clones lack it)
+            raise unittest.SkipTest(f"{path} is not present in this checkout")
         spec = importlib.util.spec_from_file_location("task5_bench", path)
         cls.benchmark = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.benchmark)

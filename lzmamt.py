@@ -627,6 +627,9 @@ def _streams_info(pack_pos, pack_size, coders, unpack_sizes, crc=None) -> bytes:
     return b + b"\x00\x00"  # end of UnpackInfo, end of StreamsInfo
 
 
+_HDR_DICT = 1 << 20  # 7z headers are rarely larger; a bigger dictionary only costs reader memory
+
+
 def _filetime(t: float) -> int:
     return int((t + 11644473600) * 10_000_000)
 
@@ -735,7 +738,18 @@ def write_7z(out_path: str, items, preset: int, store_only: bool, password, coun
             nxt = b"\x17" + _streams_info(pack, len(enc), [(_ID_AES, hc.props())], [len(hdr)], zlib.crc32(hdr))
             nxt_off = pack + len(enc)
         else:
-            nxt, nxt_off = hdr, pack
+            # 7-Zip's kEncodedHeader: the header (names, times, CRCs) as an LZMA2 stream, as 7-Zip and Bandizip
+            # write it. With many small files the raw header outweighed the data (1,500 files: 12.7x Bandizip).
+            packed = lzma.compress(hdr, lzma.FORMAT_RAW, filters=[
+                {"id": lzma.FILTER_LZMA2, "preset": 9 if len(hdr) <= (4 << 20) else 1, "dict_size": _HDR_DICT}])
+            # (preset 9 runs ~7 MB/s with no progress or cancel; a million-file header would stall for 10+ s)
+            if len(packed) + 32 < len(hdr):
+                f.write(packed)
+                nxt = b"\x17" + _streams_info(pack, len(packed), [(_ID_LZMA2, bytes([_dict_prop(_HDR_DICT)]))],
+                                              [len(hdr)], zlib.crc32(hdr))
+                nxt_off = pack + len(packed)
+            else:
+                nxt, nxt_off = hdr, pack
         f.write(nxt)
         start = struct.pack("<QQI", nxt_off, len(nxt), zlib.crc32(nxt))
         f.seek(0)

@@ -46,6 +46,7 @@ class NativePackageContractTests(unittest.TestCase):
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",  # PowerShell's localized error text is in the ANSI code page (cp949 on Korean Windows)
             check=False,
         )
 

@@ -2230,10 +2230,13 @@ def finish(code: int):
         # processEvents() outside a running loop skips DeferredDelete, so flush those explicitly
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
     gc.collect()
-    sys.stdout and sys.stdout.flush()
-    sys.stderr and sys.stderr.flush()
-    os._exit(code)
+    appcore.hard_exit(code)  # not os._exit: DLL detach ran shiboken6's static destructors, which crashed
 
 
 if __name__ == "__main__":
-    finish(main() or 0)
+    try:
+        finish(main() or 0)
+    except BaseException as e:  # never fall through to a normal exit (shiboken6's DLL detach crashed there)
+        if not isinstance(e, SystemExit):
+            log_exception(e)
+        appcore.hard_exit(e.code if isinstance(e, SystemExit) and isinstance(e.code, int) else 1)

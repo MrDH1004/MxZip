@@ -270,6 +270,30 @@ class MultiBlockTests(unittest.TestCase):
                     r = subprocess.run([BZ, "t", "-y"] + ([f"-p:{pw}"] if pw else []) + [out], capture_output=True)
                     self.assertEqual(r.returncode, 0)
 
+    def test_7z_header_is_compressed(self):
+        """Names, times and CRCs go into an LZMA2-coded header (kEncodedHeader), as 7-Zip and Bandizip write it:
+        with 1,500 tiny files the raw header was 13x the size of Bandizip's whole archive."""
+        many = os.path.join(self.root, "many")
+        for i in range(1500):
+            os.makedirs(os.path.join(many, f"g{i // 100:02d}"), exist_ok=True)
+            with open(os.path.join(many, f"g{i // 100:02d}", f"item-{i:04d}.txt"), "w") as f:
+                f.write(f"small deterministic file {i:04d}\n" * 4)
+        out = os.path.join(self.root, "many.7z")
+        formats.create("7z", [many], out, level=5)
+        with open(out, "rb") as f:
+            f.seek(12)
+            off, size = int.from_bytes(f.read(8), "little"), int.from_bytes(f.read(8), "little")
+            f.seek(32 + off)
+            self.assertEqual(f.read(1), b"\x17")  # kEncodedHeader
+        self.assertLess(os.path.getsize(out), 20_000)  # raw header: ~132 KB
+        dest = os.path.join(self.root, "many-x")
+        with formats.open_any(out) as a:
+            self.assertEqual(a.test(), [])
+            a.extract(dest)
+        self.assertEqual(tree(os.path.join(dest, "many")), tree(many))
+        if os.path.exists(BZ):
+            self.assertEqual(subprocess.run([BZ, "t", "-y", out], capture_output=True).returncode, 0)
+
     def test_7z_oversized_segment_streams(self):
         lzmamt._SEG_CAP = 300_000  # smaller than a block: forces the in-order stream path
         out = os.path.join(self.root, "s.7z")

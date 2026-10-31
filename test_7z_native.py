@@ -289,7 +289,9 @@ class Native7zIntegrationTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(0, created.returncode, created.stderr or created.stdout)
+        if created.returncode != 0 and not link.exists():
+            # mklink needs SeCreateSymbolicLinkPrivilege (administrator or Developer Mode)
+            self.skipTest(f"cannot create a symlink here: {(created.stderr or created.stdout).strip()}")
         archive = self.root / "symlink.7z"
         with py7zr.SevenZipFile(archive, "w", filters=[{"id": py7zr.FILTER_LZMA2}]) as out:
             out.write(link, "link.txt")
