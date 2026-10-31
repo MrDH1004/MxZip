@@ -30,7 +30,7 @@
 
 ---
 
-### Task 1: Reproducible Bandizip Benchmark Harness
+### Task 1: Reproducible the third-party archiver Benchmark Harness
 
 **Files:**
 - Create: `benchmark_native.py`
@@ -39,14 +39,14 @@
 
 **Interfaces:**
 - Produces: `BenchmarkCase`, `BenchmarkResult`, `run_case(case, runs=7)`, JSON report containing wall median, p95, CPU time, peak RSS, archive size, requested threads, command, and SHA-256 tree result.
-- Consumes: `runtimeconfig.configure(threads)`, installed `bz.exe`, current yzip CLI.
+- Consumes: `runtimeconfig.configure(threads)`, installed `the third-party CLI`, current yzip CLI.
 
 - [ ] **Step 1: Write failing tests** for deterministic case expansion, warm-up exclusion, median/p95 calculation, requested-thread propagation, and hash mismatch failure.
 - [ ] **Step 2: Run** `python -m unittest test_benchmark_native -v`; expect failures because the harness does not exist.
 - [ ] **Step 3: Implement the harness** with subprocess wall/CPU/RSS collection and separate temporary output roots; never clear OS caches or alter installed applications.
 - [ ] **Step 4: Run** `python -m unittest test_benchmark_native -v`; expect all tests to pass.
 - [ ] **Step 5: Capture baseline** for ZIP/7z compression and extraction at 1/4/8/16 threads, level 5, with seven measured runs; write raw JSON under `.omc/artifacts/native-performance-baseline/` and summarize it in the task ledger.
-- [ ] **Step 6: Commit** `test: add reproducible Bandizip performance harness`.
+- [ ] **Step 6: Commit** `test: add reproducible the third-party archiver performance harness`.
 
 ### Task 2: Native DLL ABI, Loader, Cancellation, and Fallback
 
@@ -133,7 +133,7 @@
 - Consumes: normalized item metadata and Task 2 cancellation/progress; AES, split, append/edit remain in `zipwriter.write_zip`.
 
 - [ ] **Step 1: Write failing selection tests** for plain new archives versus AES, split, edit/copy, and unavailable accelerator fallback.
-- [ ] **Step 2: Write failing compatibility/transaction tests** for Unicode/CP949 names, empty files/directories, ZIP64 metadata, changing source, cancellation, old output preservation, and Bandizip/Python cross-read.
+- [ ] **Step 2: Write failing compatibility/transaction tests** for Unicode/CP949 names, empty files/directories, ZIP64 metadata, changing source, cancellation, old output preservation, and the third-party archiver/Python cross-read.
 - [ ] **Step 3: Run** `python -m unittest test_zip_compress_native -v`; expect API/selection failures.
 - [ ] **Step 4: Implement `IOutArchive` callbacks** with level/thread properties, ordered metadata, unique temporary output, and structured errors.
 - [ ] **Step 5: Integrate in `zipwriter.write_zip`** only for eligible new archives; verify result before atomic publication.
@@ -159,7 +159,7 @@
 - [ ] **Step 2: Run package tests**; expect missing staged DLL/kill-switch behavior.
 - [ ] **Step 3: Implement packaging and CI checks**, including MSVC release build and clean-runner load test.
 - [ ] **Step 4: Run full Python tests, native build tests, shell tests, and staged-app smoke tests**; expect zero failures.
-- [ ] **Step 5: Run the full Bandizip matrix** at 1/4/8/16 threads and seven measured runs; verify cross-extraction hashes and current 7z compression regression gate.
+- [ ] **Step 5: Run the full the third-party archiver matrix** at 1/4/8/16 threads and seven measured runs; verify cross-extraction hashes and current 7z compression regression gate.
 - [ ] **Step 6: Write `native-results.md`** with raw numbers, conditions, wins, misses, memory, archive sizes, and unapplied paths; never claim parity for a missed condition.
 - [ ] **Step 7: Run `git diff --check` and scan for TODO/FIXME/test.skip/.only**; expect clean output.
 - [ ] **Step 8: Commit** `docs: record native acceleration results and packaging`.

@@ -182,7 +182,7 @@ int wmain(int argc, wchar_t** argv) {
         }
         if (!text[0])
             continue;
-        // the verb, not the text, identifies our item (Bandizip adds an item with the very same text)
+        // the verb, not the text, identifies our item (the third-party archiver adds an item with the very same text)
         wchar_t verb[128] = L"";
         if ((int)mii.wID >= (int)FIRST && (int)mii.wID < 0x7FFF)
             cm->GetCommandString(mii.wID - FIRST, GCS_VERBW, nullptr, (LPSTR)verb, 128);

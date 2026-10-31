@@ -90,7 +90,7 @@ GLYPH_FOLDER, GLYPH_PIN, GLYPH_MENU = "", "", ""  # Segoe icon font: Fo
 
 
 class ProgressWindow(QDialog):
-    """Progress window in the spirit of Bandizip's: bar, file name, stats, and at the bottom left
+    """Progress window in the spirit of the third-party archiver's: bar, file name, stats, and at the bottom left
     folder / keep-open / menu (low priority). When done it can stay open showing '닫기'."""
     canceled = Signal()
 
@@ -531,7 +531,7 @@ def unique_path(p: str) -> str:
 
 def writable_target(parent, target: str, elevate_args, pick, folder: str | None = None):
     """target (a file to create, or a folder to extract into) lies where only administrators may write (C:\\,
-    Program Files). Like Bandizip, yzip then runs the same job as administrator right away (Windows asks in its
+    Program Files). Like the third-party archiver, yzip then runs the same job as administrator right away (Windows asks in its
     UAC prompt); only if that is refused, offer another place. elevate_args() -> argv for the elevated yzip;
     pick(parent) -> new target or "". Returns the target to use, or None when there is nothing more to do here."""
     import appcore
@@ -567,7 +567,7 @@ def ask_password(parent, archive, retry=False):
 
 
 def unique_dir(p: str) -> str:
-    """A folder name not taken yet, Bandizip style: "name", else "name (2)", "name (3)", ..."""
+    """A folder name not taken yet, the usual archiver style: "name", else "name (2)", "name (3)", ..."""
     i, q = 2, p
     while os.path.exists(q):
         q, i = f"{p} ({i})", i + 1
@@ -1474,7 +1474,7 @@ class Main(QMainWindow):
         if settings.get("compress_dir"):
             default_path = os.path.join(settings["compress_dir"], os.path.basename(default_path))
         default_path = unique_path(default_path)
-        if not ask:  # like Bandizip's "<name>.zip으로 압축하기": no options, just a progress window
+        if not ask:  # like the third-party archiver's "<name>.zip으로 압축하기": no options, just a progress window
             defaults = CompressDialog(parent, default_path, paths)
             if out:  # the shell menu explicitly promised this ZIP name and location
                 defaults.fmt.setCurrentIndex(defaults.fmt.findData("zip"))
@@ -1780,8 +1780,8 @@ def _delete_key_tree(key: str):
 # Explorer keeps a loaded handler locked, so a versioned copy is installed outside dist (rebuilds stay possible).
 SHELLEX_CLSID = "{7E3B1C52-9A4D-4F1E-B6C2-3D8A5F0E9C71}"
 # Explorer lists handlers class by class (* and Directory before AllFilesystemObjects), each class in key-name order.
-# Bandizip registers "AABdzCtx" under * and Directory; "AAAyzip" sorts just before it, so our items join the
-# block of Windows' "압축 풀기(T)..." and Bandizip's items instead of starting their own block below them.
+# A common third-party archiver registers its handler as "AAB..." under * and Directory; "AAAyzip" sorts just before it, so our items join the
+# block of Windows' "압축 풀기(T)..." and the third-party archiver's items instead of starting their own block below them.
 SHELLEX_KEYS = [rf"Software\Classes\{c}\shellex\ContextMenuHandlers\AAAyzip" for c in ("*", "Directory")]
 # where the handler was registered before; removed on register/unregister so the items don't show twice
 OLD_SHELLEX_KEYS = [r"Software\Classes\AllFilesystemObjects\shellex\ContextMenuHandlers\yzip"] + [
@@ -1926,7 +1926,7 @@ def quick_extract(win: Main, arc: str, folder: bool, into: str | None = None):
     if not dest:
         return
     if folder:
-        # an existing folder is not mixed into: "Kings (2)", like Bandizip; "b.bin (2)" for b.bin.xz, not "b (2).bin"
+        # an existing folder is not mixed into: "Kings (2)", like the third-party archiver; "b.bin (2)" for b.bin.xz, not "b (2).bin"
         dest = into if into and dest == here and not os.path.exists(into) else unique_dir(
             os.path.join(dest, formats.stem(arc)))
     try:

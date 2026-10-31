@@ -1,6 +1,6 @@
 # Native archive benchmark
 
-`benchmark_native.py` compares the installed Bandizip console tool with the current yzip CLI on Windows. It covers ZIP and 7z compression and extraction at level 5 with 1, 4, 8, and 16 requested threads across five independent dataset classes.
+`benchmark_native.py` compares the installed the third-party archiver console tool with the current yzip CLI on Windows. It covers ZIP and 7z compression and extraction at level 5 with 1, 4, 8, and 16 requested threads across five independent dataset classes.
 
 ## Run
 
@@ -37,7 +37,7 @@ python benchmark_native.py --create-baseline --runs 7 `
 
 `--create-baseline` requires `--summary` and cannot be combined with `--regression-baseline`, so it cannot silently act as a normal regression run.
 
-The harness requires `C:\Program Files\Bandizip\bz.exe`. It generates these deterministic datasets in a temporary directory:
+The harness requires `C:\Program Files\the third-party archiver\the third-party CLI`. It generates these deterministic datasets in a temporary directory:
 
 - 8 MiB of repeated application-log text;
 - 8 MiB of seeded pseudorandom, effectively incompressible bytes;
@@ -47,7 +47,7 @@ The harness requires `C:\Program Files\Bandizip\bz.exe`. It generates these dete
 
 Every case gets one unreported warm-up followed by the requested number of measured runs. The warm-up result receives the same SHA-256 integrity verification but its timing is discarded. Every iteration uses a separate temporary output root; the harness neither clears operating-system caches nor changes installed applications.
 
-Bandizip receives `-t:N`. The yzip subprocess calls `runtimeconfig.configure(N, temporary_root)` before invoking `yzip_cli.main`, so the requested worker limit applies inside the measured process.
+The third-party archiver receives `-t:N`. The yzip subprocess calls `runtimeconfig.configure(N, temporary_root)` before invoking `yzip_cli.main`, so the requested worker limit applies inside the measured process.
 
 ## Report contract
 
@@ -58,13 +58,13 @@ The JSON document contains `schema_version`, `runs`, `warmup_runs`, and a `resul
 - median process CPU time and maximum peak resident working set;
 - archive size, exact command, measured-run count, and SHA-256 tree result.
 
-The tree digest includes each relative path, file size, and file content in sorted path order. Extraction cases always consume an archive made by the opposite tool. Every measured compression result is also extracted by the opposite tool: yzip output by Bandizip, and Bandizip output by yzip. Any command failure or source/extracted-tree digest mismatch aborts the run.
+The tree digest includes each relative path, file size, and file content in sorted path order. Extraction cases always consume an archive made by the opposite tool. Every measured compression result is also extracted by the opposite tool: yzip output by the third-party archiver, and the third-party archiver output by yzip. Any command failure or source/extracted-tree digest mismatch aborts the run.
 
 The protected condition is the paired 8-thread 7z compression ratio
-`yzip median / Bandizip median` for each dataset. The regression fraction is
+`yzip median / the third-party archiver median` for each dataset. The regression fraction is
 `current ratio / baseline ratio - 1`. This normalizes machine-wide or environmental
 slowdowns that affect both products. Execution exits nonzero when any normalized
-fraction exceeds 5%. Absolute yzip and Bandizip medians remain in raw and summary
+fraction exceeds 5%. Absolute yzip and the third-party archiver medians remain in raw and summary
 evidence as informational measurements. Missing, duplicate, nonpositive, or nonfinite
 pairs fail before publication.
 
@@ -78,7 +78,7 @@ The complete matrix contains 160 cases. All cases completed seven measured runs 
 
 Baseline 7z compression 8-thread paired wall medians and ratios:
 
-| Dataset | yzip seconds | Bandizip seconds | yzip/Bandizip |
+| Dataset | yzip seconds | the third-party archiver seconds | yzip/the third-party archiver |
 |---|---:|---:|---:|
 | large-text | 0.258331 | 0.051381 | 5.027714 |
 | incompressible | 1.826888 | 0.288626 | 6.329592 |

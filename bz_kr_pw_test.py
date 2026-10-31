@@ -4,7 +4,7 @@ import tempfile
 
 import ziplib
 
-BZ = r"C:\Program Files\Bandizip\bz.exe"
+BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
 with tempfile.TemporaryDirectory() as t:
     f = os.path.join(t, "f.txt")
     with open(f, "w") as fh:

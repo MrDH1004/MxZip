@@ -319,8 +319,8 @@ class Archive:
         self.close()
 
     def set_password(self, pw: Optional[str]):
-        """Non-ASCII passwords: UTF-8 is the WinZip-AES standard, but Bandizip (REA-verified with
-        bz.exe 7.46) derives the key from the ANSI/cp949 bytes, so fall back to that on a mismatch."""
+        """Non-ASCII passwords: UTF-8 is the WinZip-AES standard, but a third-party archiver
+        (verified) derives the key from the ANSI/cp949 bytes, so fall back to that on a mismatch."""
         if not pw:
             self.zf.setpassword(None)
             return

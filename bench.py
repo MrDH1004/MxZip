@@ -1,4 +1,4 @@
-"""Compare yzip against Bandizip's bz.exe on identical data: compress time, extract time, archive size.
+"""Compare yzip against the third-party archiver's CLI on identical data: compress time, extract time, archive size.
 Usage: python bench.py [yzip-cli-args-suffix]   (both tools use deflate, level 5, no password)"""
 import os
 import random
@@ -9,7 +9,7 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BZ = r"C:\Program Files\Bandizip\bz.exe"
+BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
 YZIP = [sys.executable, "-W", "ignore", os.path.join(HERE, "yzip_cli.py")]
 LEVEL = os.environ.get("BENCH_LEVEL", "5")
 
@@ -53,7 +53,7 @@ def bench(name, src):
     print(f"\n== {name}: {du(src):.0f} MB source, {sum(len(fs) for _, _, fs in os.walk(src))} files, level {LEVEL}")
     rows = []
     for tool, mk, ex in (
-        ("bandizip", lambda z: [BZ, "c", "-fmt:zip", f"-l:{LEVEL}", "-y", z, src],
+        ("reference", lambda z: [BZ, "c", "-fmt:zip", f"-l:{LEVEL}", "-y", z, src],
          lambda z, o: [BZ, "x", "-y", f"-o:{o}", z]),
         ("yzip", lambda z: YZIP + ["c", z, src, "-l", LEVEL],
          lambda z, o: YZIP + ["x", z, "-o", o]),

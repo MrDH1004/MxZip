@@ -122,7 +122,7 @@ _TYPE_LABELS = {
 SUPPORTED_TYPES = {ext: _TYPE_LABELS.get(ext, ext.upper().lstrip(".") + " 파일") for ext in READ_EXTS}
 _MULTI_EXTS = (".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst")
 _TAR_NAMES = _MULTI_EXTS + (".tar", ".tgz", ".tbz", ".tbz2", ".txz", ".tzst")
-# volumes of one set: x.part2.rar / x.r00 (RAR), x.vol2.egg (EGG), x.a00 (ALZ), x.z01 (ZIP, Bandizip / WinZip)
+# volumes of one set: x.part2.rar / x.r00 (RAR), x.vol2.egg (EGG), x.a00 (ALZ), x.z01 (ZIP, WinZip style)
 _VOLUME = re.compile(r"^(.*?)(?:\.part(\d+)\.rar|\.r(\d\d)|\.vol(\d+)\.egg|\.a(\d\d)|\.z(\d\d))$", re.I)
 
 
@@ -205,7 +205,7 @@ def detect(path: str) -> str:
     if head[:3] == b"zPQ" or low.endswith(tuple(ZPAQ_EXTS)):
         return "zpaq"
     if low.endswith(".zipx") or low.endswith(".zip") and os.path.exists(path[:-4] + ".z01"):
-        return "7zcli"  # newer ZIP methods / a Bandizip-WinZip split set (.z01 .z02 ... .zip)
+        return "7zcli"  # newer ZIP methods / a WinZip-style split set (.z01 .z02 ... .zip)
     if head[:4] in (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"):
         return "zip"
     if head[:6] == b"7z\xbc\xaf\x27\x1c":
@@ -263,7 +263,7 @@ def open_any(path: str, password: Optional[str] = None):
     if kind == "zip":
         return ziplib.Archive(path, password)
     if kind == "7z":
-        if ziplib.is_split_first(path):  # a.7z.001, .002 ... (7-Zip / Bandizip volumes): read the joined copy
+        if ziplib.is_split_first(path):  # a.7z.001, .002 ... (7-Zip-style volumes): read the joined copy
             tmp = ziplib.join_split(path)
             try:
                 a = SevenZArchive(tmp, password)
@@ -448,7 +448,7 @@ class TarArchive(_Base):
 
     @staticmethod
     def _fix(name: str) -> str:
-        """Names that are not UTF-8 (Bandizip and old Windows tools write CP949) come back with surrogate
+        """Names that are not UTF-8 (Some archivers and old Windows tools write CP949) come back with surrogate
         escapes; decode those bytes as CP949, as ziplib.fix_name does for ZIP."""
         try:
             name.encode("utf-8")

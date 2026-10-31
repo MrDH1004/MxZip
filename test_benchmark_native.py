@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import sys
 import tempfile
 import unittest
 import zlib
@@ -11,9 +12,15 @@ import benchmark_native as benchmark
 
 
 class BenchmarkNativeTests(unittest.TestCase):
+    def setUp(self):
+        # the reference CLI comes from YZIP_REF_ARCHIVER; commands are mocked here, so any existing file will do
+        patcher = mock.patch.object(benchmark, "BZ_EXE", Path(sys.executable))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _case(self, **overrides):
         values = dict(
-            dataset="large-text", tool="bandizip", format="zip", operation="compress",
+            dataset="large-text", tool="reference", format="zip", operation="compress",
             threads=4, level=5, source=Path("source"), archive=Path("archive.zip"),
         )
         values.update(overrides)
@@ -33,7 +40,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             [
                 (dataset, tool, archive_format, operation, threads)
                 for dataset in datasets
-                for tool in ("bandizip", "yzip")
+                for tool in ("reference", "yzip")
                 for archive_format in ("zip", "7z")
                 for operation in ("compress", "extract")
                 for threads in (1, 4, 8, 16)
@@ -78,10 +85,10 @@ class BenchmarkNativeTests(unittest.TestCase):
         self.assertEqual(result.peak_rss_bytes, 500)
 
     def test_commands_propagate_requested_threads(self):
-        bandizip = benchmark.build_command(self._case(tool="bandizip", format="7z", threads=8), Path("out"))
+        reference = benchmark.build_command(self._case(tool="reference", format="7z", threads=8), Path("out"))
         yzip = benchmark.build_command(self._case(tool="yzip", format="7z", threads=16), Path("out"))
 
-        self.assertIn("-t:8", bandizip)
+        self.assertIn("-t:8", reference)
         self.assertIn("runtimeconfig.configure(16", yzip[2])
 
     def test_run_case_fails_when_extracted_tree_hash_mismatches_source(self):
@@ -123,14 +130,14 @@ class BenchmarkNativeTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "cross-extraction SHA-256 mismatch"):
                     benchmark.verify_generated_archive(case, archive, root / "cross-extracted")
 
-    def test_bandizip_compression_cross_extracts_with_yzip(self):
+    def test_reference_compression_cross_extracts_with_yzip(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / "source"
             source.mkdir()
             (source / "payload.txt").write_text("expected", encoding="utf-8")
             destination = root / "cross-extracted"
-            case = self._case(tool="bandizip", source=source)
+            case = self._case(tool="reference", source=source)
 
             def fake_extract(command):
                 self.assertEqual(command[0], benchmark.sys.executable)
@@ -153,15 +160,15 @@ class BenchmarkNativeTests(unittest.TestCase):
         )
         self.assertEqual(result.to_json()["case"]["dataset"], "small-files")
 
-    def test_7z_gate_common_yzip_and_bandizip_slowdown_cancels(self):
-        current = {"large-text": {"yzip": 12.0, "bandizip": 6.0}}
-        baseline = {"large-text": {"yzip": 10.0, "bandizip": 5.0}}
+    def test_7z_gate_common_yzip_and_reference_slowdown_cancels(self):
+        current = {"large-text": {"yzip": 12.0, "reference": 6.0}}
+        baseline = {"large-text": {"yzip": 10.0, "reference": 5.0}}
         regression = benchmark.enforce_7z_regression_gate(current, baseline)
         self.assertAlmostEqual(regression["large-text"], 0.0)
 
     def test_7z_gate_rejects_yzip_only_slowdown_over_five_percent(self):
-        current = {"large-text": {"yzip": 10.5001, "bandizip": 5.0}}
-        baseline = {"large-text": {"yzip": 10.0, "bandizip": 5.0}}
+        current = {"large-text": {"yzip": 10.5001, "reference": 5.0}}
+        baseline = {"large-text": {"yzip": 10.0, "reference": 5.0}}
         with self.assertRaisesRegex(RuntimeError, "large-text.*5.00%"):
             benchmark.enforce_7z_regression_gate(current, baseline)
 
@@ -173,26 +180,26 @@ class BenchmarkNativeTests(unittest.TestCase):
             requested_threads=8, command=("tool",), sha256_tree="hash",
         )
 
-    def _baseline_summary(self, yzip_medians=None, bandizip_medians=None):
+    def _baseline_summary(self, yzip_medians=None, reference_medians=None):
         if yzip_medians is None:
             yzip_medians = {name: 10.0 for name in benchmark.DATASET_NAMES}
-        if bandizip_medians is None:
-            bandizip_medians = {name: 5.0 for name in benchmark.DATASET_NAMES}
+        if reference_medians is None:
+            reference_medians = {name: 5.0 for name in benchmark.DATASET_NAMES}
         return {
             "schema_version": 1,
-            "regression_methodology": "paired-yzip-over-bandizip-ratio-v1",
+            "regression_methodology": "paired-yzip-over-reference-ratio-v1",
             "seven_zip_8_thread_medians_seconds": yzip_medians,
-            "bandizip_seven_zip_8_thread_medians_seconds": bandizip_medians,
-            "seven_zip_8_thread_yzip_bandizip_ratios": {
-                name: yzip_medians[name] / bandizip_medians[name]
-                for name in yzip_medians if name in bandizip_medians
+            "reference_seven_zip_8_thread_medians_seconds": reference_medians,
+            "seven_zip_8_thread_yzip_reference_ratios": {
+                name: yzip_medians[name] / reference_medians[name]
+                for name in yzip_medians if name in reference_medians
             },
         }
 
-    def _paired_results(self, yzip=10.0, bandizip=5.0):
+    def _paired_results(self, yzip=10.0, reference=5.0):
         results = []
         for name in benchmark.DATASET_NAMES:
-            results.append(self._gate_result(bandizip, name, "bandizip"))
+            results.append(self._gate_result(reference, name, "reference"))
             results.append(self._gate_result(yzip, name, "yzip"))
         return results
 
@@ -237,7 +244,7 @@ class BenchmarkNativeTests(unittest.TestCase):
                 hashlib.sha256(original).hexdigest(),
                 evaluated["evaluation_provenance"]["input_raw_sha256"],
             )
-            self.assertEqual("paired-yzip-over-bandizip-ratio-v1",
+            self.assertEqual("paired-yzip-over-reference-ratio-v1",
                              evaluated["regression_methodology"])
 
     def test_evaluate_existing_missing_pair_fails_before_publishing(self):
@@ -347,7 +354,7 @@ class BenchmarkNativeTests(unittest.TestCase):
             baseline.write_text(json.dumps(self._baseline_summary()), encoding="utf-8")
             results = []
             for name in benchmark.DATASET_NAMES:
-                results.append(self._gate_result(5.0, name, "bandizip"))
+                results.append(self._gate_result(5.0, name, "reference"))
                 results.append(self._gate_result(
                     10.5001 if name == "large-text" else 10.0, name, "yzip"
                 ))

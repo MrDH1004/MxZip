@@ -8,7 +8,7 @@ import zipfile
 import zipwriter
 import ziplib
 
-BZ = r"C:\Program Files\Bandizip\bz.exe"
+BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
 
 
 def sha(b):
@@ -153,9 +153,9 @@ class WriterTests(unittest.TestCase):
         with ziplib.Archive(self.out, "pw") as a:
             self.assertEqual(a.test(), [])
 
-    def test_aes_bandizip_opens_it(self):
+    def test_aes_reference_opens_it(self):
         if not os.path.exists(BZ):
-            self.skipTest("Bandizip not installed")
+            self.skipTest("the third-party archiver not installed")
         self.build(password="Pw1234")
         r = subprocess.run([BZ, "t", "-y", "-p:Pw1234", self.out], capture_output=True, timeout=120)
         self.assertIn(b"All OK", r.stdout, r.stdout[-300:])

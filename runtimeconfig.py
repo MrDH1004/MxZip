@@ -310,7 +310,7 @@ def _pool_worker(state: _PoolState):
 class ThreadPoolExecutor:
     """The part of concurrent.futures.ThreadPoolExecutor yzip uses (submit / map / shutdown / with, futures with
     result / cancel), built on threading alone. Importing concurrent.futures pulls in logging, traceback and
-    inspect: 20-50 ms of every run that starts a pool, which was most of the gap to Bandizip on small archives.
+    inspect: 20-50 ms of every run that starts a pool, which was most of the gap to the third-party archiver on small archives.
     Threads start on demand up to max_workers (daemon threads)."""
 
     def __init__(self, max_workers=None, thread_name_prefix=""):

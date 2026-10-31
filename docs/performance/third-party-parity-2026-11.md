@@ -1,8 +1,8 @@
-# MxZip vs Bandizip (2026-11-01, home PC)
+# MxZip vs the third-party archiver (2026-11-01, home PC)
 
-Paired end-to-end runs: each case runs MxZip (`python -c "import yzip_cli; yzip_cli.main(...)"`) and Bandizip
-(`bz.exe`) back to back, level 5, default threads, 1 warm-up + 7 measured runs, median. Every round trip is
-checked (extracted tree size equals the source). Ratio = Bandizip time / MxZip time (100 % = as fast).
+Paired end-to-end runs: each case runs MxZip (`python -c "import yzip_cli; yzip_cli.main(...)"`) and the third-party archiver
+(`the third-party CLI`) back to back, level 5, default threads, 1 warm-up + 7 measured runs, median. Every round trip is
+checked (extracted tree size equals the source). Ratio = the third-party archiver time / MxZip time (100 % = as fast).
 
 | | before | after |
 |---|---:|---:|
@@ -13,8 +13,8 @@ checked (extracted tree size equals the source). Ratio = Bandizip time / MxZip t
 Datasets: `benchmark_native.make_datasets` (8 MB text, 8 MB random, 1,500 small files, the repository as a
 mixed project, a 32 MB repetitive file) plus a copy of the built app (~150 MB of DLLs, .pyd, Qt plugins).
 
-Large jobs (Bandizip >= 0.3 s): MxZip is faster in all of them, e.g. app tree 7z compress 4.1 s vs 10.2 s,
-1,500 small files 7z extract 0.63 s vs 1.00 s. The remaining gap is on jobs Bandizip finishes in 0.03-0.05 s:
+Large jobs (the third-party archiver >= 0.3 s): MxZip is faster in all of them, e.g. app tree 7z compress 4.1 s vs 10.2 s,
+1,500 small files 7z extract 0.63 s vs 1.00 s. The remaining gap is on jobs the third-party archiver finishes in 0.03-0.05 s:
 starting a Python process costs ~0.03 s on this machine and importing the engine another ~0.03 s.
 
 ## What changed
@@ -41,6 +41,6 @@ starting a Python process costs ~0.03 s on this machine and importing the engine
   archive 37 % larger (584 KB -> 798 KB; 512 KB blocks: +21 %). Not worth it for an archiver.
 - An own ZIP central-directory reader instead of zipfile: ~7 ms per ZIP run (at most +2 points on extract)
   against rewriting ZIP64 / name encoding / encryption handling. Overlapping 7z decode and file commits:
-  the cases it helps already beat Bandizip.
+  the cases it helps already beat the third-party archiver.
 - File preallocation (`truncate`/`SetEndOfFile`): +80 ms for 32 MB on NTFS.
 - Native DLL paths stay opt-in (see `native-results.md`).

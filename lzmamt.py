@@ -352,7 +352,7 @@ class Unsupported(Exception):
 def fast_plan(z) -> list[dict]:
     """Folder list for fast_extract from an open py7zr.SevenZipFile (py7zr parses the header, including an
     encrypted or compressed one). Handles folders made of LZMA2 or COPY, optionally behind 7zAES, with one
-    packed stream each: what 7-Zip, Bandizip, py7zr and write_7z produce for these settings."""
+    packed stream each: what 7-Zip, other archivers, py7zr and write_7z produce for these settings."""
     ms = z.header.main_streams
     if ms is None:
         return []
@@ -805,14 +805,14 @@ def write_7z(out_path: str, items, preset: int, store_only: bool, password, coun
         hdr += b"\x00\x00"
 
         if key:  # header encrypted: names stay hidden until the password is given. AES alone, not LZMA2+AES:
-            hc = _Cbc(key)  # py7zr fails on a compressed+encrypted header (7-Zip/Bandizip read both)
+            hc = _Cbc(key)  # py7zr fails on a compressed+encrypted header (7-Zip/third-party archivers read both)
             enc = hc.update(hdr) + hc.final()
             f.write(enc)
             nxt = b"\x17" + _streams_info(pack, len(enc), [(_ID_AES, hc.props())], [len(hdr)], zlib.crc32(hdr))
             nxt_off = pack + len(enc)
         else:
-            # 7-Zip's kEncodedHeader: the header (names, times, CRCs) as an LZMA2 stream, as 7-Zip and Bandizip
-            # write it. With many small files the raw header outweighed the data (1,500 files: 12.7x Bandizip).
+            # 7-Zip's kEncodedHeader: the header (names, times, CRCs) as an LZMA2 stream, as 7-Zip and other archivers
+            # write it. With many small files the raw header outweighed the data (1,500 files: 12.7x the third-party archiver).
             packed = lzma.compress(hdr, lzma.FORMAT_RAW, filters=[
                 {"id": lzma.FILTER_LZMA2, "preset": 9 if len(hdr) <= (4 << 20) else 1, "dict_size": _HDR_DICT}])
             # (preset 9 runs ~7 MB/s with no progress or cancel; a million-file header would stall for 10+ s)

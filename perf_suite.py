@@ -1,4 +1,4 @@
-"""Performance check of yzip against Bandizip (bz.exe) and Windows tar on identical generated data.
+"""Performance check of yzip against a third-party archiver (its CLI) and Windows tar on identical generated data.
 
 Measures wall time, CPU time, peak memory (of the tool's own process), archive size; every archive is
 cross-checked by extracting it with a DIFFERENT tool and comparing SHA-256 of every file with the source.
@@ -19,7 +19,7 @@ import ctypes
 from ctypes import wintypes
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BZ = r"C:\Program Files\Bandizip\bz.exe"
+BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
 CLI = [sys.executable, "-W", "ignore", os.path.join(HERE, "yzip_cli.py")]
 EXE = os.path.join(HERE, "dist", "yzip", "yzip.exe")
 QUICK = "--quick" in sys.argv
@@ -120,7 +120,7 @@ def env_exe(t):
 
 def tool_cmds(name, src, z, out, t, level):
     parent, base = os.path.dirname(src), os.path.basename(src)
-    if name == "Bandizip":
+    if name == "Third-party":
         return [BZ, "c", "-fmt:zip", f"-l:{level}", "-y", z, src], [BZ, "x", "-y", f"-o:{out}", z], None
     if name == "yzip CLI":
         return CLI + ["c", z, src, "-l", str(level)], CLI + ["x", z, "-o", out], None
@@ -151,12 +151,12 @@ def cross_check(z, base, src_manifest, t, maker):
     chk = os.path.join(t, "chk")
     shutil.rmtree(chk, ignore_errors=True)
     os.makedirs(chk)
-    if maker == "Bandizip":
+    if maker == "Third-party":
         subprocess.run(CLI + ["x", z, "-o", chk], capture_output=True)
         by = "yzip"
     else:
         subprocess.run([BZ, "x", "-y", f"-o:{chk}", z], capture_output=True)
-        by = "Bandizip"
+        by = "Third-party"
     got = manifest(extract_root(chk, base))
     ok = got == src_manifest
     shutil.rmtree(chk, ignore_errors=True)
@@ -216,7 +216,7 @@ def bench_password(src):
     print("\n=== 암호 압축 (같은 텍스트 데이터)", flush=True)
     rows = []
     size = tree_size(src)
-    for name, mk, ex in (("Bandizip", lambda z: [BZ, "c", "-fmt:zip", "-l:5", "-p:Pw1234", "-y", z, src],
+    for name, mk, ex in (("Third-party", lambda z: [BZ, "c", "-fmt:zip", "-l:5", "-p:Pw1234", "-y", z, src],
                           lambda z, o: [BZ, "x", "-y", "-p:Pw1234", f"-o:{o}", z]),
                          ("yzip CLI", lambda z: CLI + ["c", z, src, "-l", "5", "-p", "Pw1234"],
                           lambda z, o: CLI + ["x", z, "-o", o, "-p", "Pw1234"])):
@@ -235,19 +235,19 @@ def bench_password(src):
 
 
 def bench_formats(src):
-    """Other formats on the same text data: yzip CLI (-fmt) against bz.exe where Bandizip writes that format."""
+    """Other formats on the same text data: yzip CLI (-fmt) against the third-party CLI where the third-party archiver writes that format."""
     print("\n=== 다른 형식 (같은 텍스트 데이터)", flush=True)
     size = tree_size(src)
     rows = []
     for fid, ext, bzfmt in (("7z", ".7z", "7z"), ("tgz", ".tar.gz", "tgz"), ("txz", ".tar.xz", None),
                             ("tzst", ".tar.zst", None), ("tbz", ".tar.bz2", None)):
-        for tool in (("Bandizip",) if bzfmt else ()) + ("yzip CLI",):
+        for tool in (("Third-party",) if bzfmt else ()) + ("yzip CLI",):
             with tempfile.TemporaryDirectory(prefix="yzp_") as t:
-                z = os.path.join(t, "a" + (".tgz" if tool == "Bandizip" and bzfmt == "tgz" else ext))
-                mk = [BZ, "c", f"-fmt:{bzfmt}", "-l:5", "-y", z, src] if tool == "Bandizip" else \
+                z = os.path.join(t, "a" + (".tgz" if tool == "Third-party" and bzfmt == "tgz" else ext))
+                mk = [BZ, "c", f"-fmt:{bzfmt}", "-l:5", "-y", z, src] if tool == "Third-party" else \
                     CLI + ["c", z, src, "-l", "5", f"-fmt:{fid}"]
                 c = run(mk)
-                ex = [BZ, "x", "-y", f"-o:{os.path.join(t, 'o')}", z] if tool == "Bandizip" else \
+                ex = [BZ, "x", "-y", f"-o:{os.path.join(t, 'o')}", z] if tool == "Third-party" else \
                     CLI + ["x", z, "-o", os.path.join(t, "o")]
                 x = run(ex)
                 zs = os.path.getsize(z) if os.path.exists(z) else 0
@@ -264,7 +264,7 @@ def bench_latency(t):
         f.write("hello " * 1000)
     res = {}
     for name, cmd in (("yzip 우클릭(exe)", lambda z, l: [EXE, "--archive-list", l, "--out", z]),
-                      ("Bandizip bz.exe", lambda z, l: [BZ, "c", "-fmt:zip", "-y", z, p])):
+                      ("Third-party CLI", lambda z, l: [BZ, "c", "-fmt:zip", "-y", z, p])):
         walls = []
         for i in range(5):
             z = os.path.join(t, f"m{i}_{len(res)}.zip")
@@ -280,7 +280,7 @@ def bench_latency(t):
 def main():
     out_json = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
     report = {"datasets": []}
-    tools = ["Bandizip", "yzip CLI", "yzip 우클릭(exe)", "Windows tar"]
+    tools = ["Third-party", "yzip CLI", "yzip 우클릭(exe)", "Windows tar"]
     with tempfile.TemporaryDirectory(prefix="yzdata_") as data:
         t0 = time.time()
         make_text(os.path.join(data, "logs"), 120 if QUICK else 360)
@@ -296,7 +296,7 @@ def main():
         if not QUICK:
             make_huge(os.path.join(data, "huge"), 4.5)
             report["datasets"].append(bench_dataset("4.5GB 단일 파일 (zip64)", os.path.join(data, "huge"),
-                                                    ["Bandizip", "yzip CLI"]))
+                                                    ["Third-party", "yzip CLI"]))
             shutil.rmtree(os.path.join(data, "huge"), ignore_errors=True)
         report["password"] = bench_password(os.path.join(data, "logs"))
         report["formats"] = bench_formats(os.path.join(data, "logs"))

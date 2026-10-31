@@ -170,7 +170,7 @@ def cleanup_temp(*, dry_run: bool = False, paths=None) -> dict | list[str]:
 
 
 def set_low_priority(on: bool):
-    """Idle priority for this process (and so its worker threads), like Bandizip's '낮은 우선순위'."""
+    """Idle priority for this process (and so its worker threads), like the third-party archiver's '낮은 우선순위'."""
     if os.name == "nt":
         import ctypes
         k = ctypes.WinDLL("kernel32", use_last_error=True)

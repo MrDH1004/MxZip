@@ -458,11 +458,11 @@ class Task5BenchmarkEvidenceTests(unittest.TestCase):
         }
         native_run = dict(valid_run)
         python_run = dict(valid_run, actual_selection="python")
-        bandizip_run = dict(valid_run, actual_selection="bandizip")
+        reference_run = dict(valid_run, actual_selection="reference")
         report = {"results": [{"tools": {
             "native-yzip": {"runs": [native_run]},
             "existing-yzip": {"runs": [python_run]},
-            "bandizip": {"runs": [bandizip_run]},
+            "reference": {"runs": [reference_run]},
         }}]}
         self.benchmark.validate_evidence(report)
         fallback = json.loads(json.dumps(report))

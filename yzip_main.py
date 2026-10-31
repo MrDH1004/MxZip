@@ -18,7 +18,7 @@ def main() -> int:
             return 0
         targets = appcore.quick_targets(paths, args[3], settings, explicit_zip=True)
         writable = all(appcore.can_write(os.path.dirname(os.path.abspath(out))) for _, out in targets)
-        # a folder only administrators may write to (C:\): the same command as administrator, like Bandizip
+        # a folder only administrators may write to (C:\): the same command as administrator, like the third-party archiver
         # (Windows asks in its UAC prompt); if that is refused, the GUI offers another place
         if not writable and not os.environ.get(
                 "YZIP_AUTOACCEPT") and appcore.run_elevated(args):

@@ -50,7 +50,7 @@ class ZipTests(unittest.TestCase):
     def test_aes(self):
         self._roundtrip(password="pw한글1")
 
-    def test_cp949_password_from_bandizip(self):
+    def test_cp949_password_from_reference(self):
         import pyzipper
         out = os.path.join(self.root, "bz.zip")
         with pyzipper.AESZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, encryption=pyzipper.WZ_AES) as zf:

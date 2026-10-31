@@ -10,7 +10,7 @@
 
 - 데이터셋: `large-text`, `incompressible`, `small-files`(1,500개),
   `mixed-project`, `large-file`
-- 프로그램: Bandizip, yzip
+- 프로그램: The third-party archiver, yzip
 - 형식: ZIP, 7z
 - 작업: 압축 생성, 압축 해제
 - 요청 스레드: 1, 4, 8, 16
@@ -29,12 +29,12 @@
 
 ## 7z 회귀 판정
 
-회귀 gate는 dataset별 8-thread 7z 압축 결과에서 yzip과 Bandizip이 정확히
+회귀 gate는 dataset별 8-thread 7z 압축 결과에서 yzip과 타사 압축 프로그램이 정확히
 한 쌍 존재할 때만 계산한다.
 
 ```text
-현재 비율 = 현재 yzip median / 현재 Bandizip median
-기준 비율 = 기준 yzip median / 기준 Bandizip median
+현재 비율 = 현재 yzip median / 현재 the third-party archiver median
+기준 비율 = 기준 yzip median / 기준 the third-party archiver median
 정규화 회귀 = 현재 비율 / 기준 비율 - 1
 ```
 

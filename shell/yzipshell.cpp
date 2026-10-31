@@ -1,6 +1,6 @@
 // yzip Explorer context-menu handler. When every selected item is an archive (an extension listed in
 // HKCU\Software\yzip\ArchiveExts), first the extract items, so they sit in the menu's extract section next to
-// Windows' and Bandizip's instead of the static-verb group at the top:
+// Windows' and the third-party archiver's instead of the static-verb group at the top:
 //   2 "여기에 압축 풀기": <Command> --extract-list here <list>
 //   3 "폴더에 압축 풀기": <Command> --extract-list folder <list>
 // otherwise (not all archives) the compress items:
@@ -84,7 +84,7 @@ static std::wstring menu_label(const std::wstring& out) {
             esc += L'&';
         esc += c;
     }
-    return esc + L"으로 압축하기 - &MxZip";  // Bandizip uses the same wording with &Z, so name ourselves and take Y
+    return esc + L"으로 압축하기 - &MxZip";  // The third-party archiver uses the same wording with &Z, so name ourselves and take Y
 }
 
 static std::wstring read_command() {
@@ -304,7 +304,7 @@ public:
             }
             if (enabled & 4) {
             cmds_.push_back(CMD_FOLDER);
-            if (paths_.size() == 1) {  // like Bandizip's "Kings (2)\ 에 풀기": the real folder, numbered if taken
+            if (paths_.size() == 1) {  // like the third-party archiver's "Kings (2)\ 에 풀기": the real folder, numbered if taken
                 into_ = extract_dir(paths_[0]);
                 std::wstring n = file_name(into_);
                 if (n.size() > 52)

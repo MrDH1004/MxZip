@@ -1,4 +1,4 @@
-"""Command line front-end. Command set follows what REA found in Bandizip's bz.exe usage text:
+"""Command line front-end. Command set follows the usual archiver command-line conventions:
 a/c add-create, x extract (full path), e extract flat, t test, l list, d delete, rn rename."""
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def _quick_args(argv):
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    argv = [x for arg in argv for x in (arg.split(":", 1) if arg.startswith("-fmt:") else [arg])]  # bz.exe style
+    argv = [x for arg in argv for x in (arg.split(":", 1) if arg.startswith("-fmt:") else [arg])]  # the common -fmt:zip style
     a = _quick_args(argv) or build_parser().parse_args(argv)
     cmd = a.command
     try:

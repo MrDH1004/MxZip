@@ -11,7 +11,7 @@ import formats
 import lzmamt
 import ziplib
 
-BZ = r"C:\Program Files\Bandizip\bz.exe"
+BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
 
 
 def sha(b):
@@ -92,7 +92,7 @@ class FormatTests(unittest.TestCase):
         self.assertIn(b"r.bin\x00", head)
         self.assertNotIn(b"partial", head)
 
-    def test_bandizip_reference_extensions_are_exposed(self):
+    def test_third_party_reference_extensions_are_exposed(self):
         expected = {".zip", ".zipx", ".exe", ".tar", ".tgz", ".lzh", ".iso", ".7z", ".gz", ".xz", ".zpaq"}
         self.assertTrue(expected <= set(formats.READ_EXTS), sorted(set(formats.READ_EXTS) & expected))
 
@@ -194,20 +194,20 @@ class FormatTests(unittest.TestCase):
             self.assertIs(formats.open_any(path), sentinel)
         opened.assert_called_once_with(path, "7zcli", None)
 
-    def test_bandizip_interop(self):
+    def test_reference_interop(self):
         if not os.path.exists(BZ):
-            self.skipTest("Bandizip not installed")
+            self.skipTest("the third-party archiver not installed")
         for fid in ("7z", "tar", "tgz", "tbz", "txz"):
             with self.subTest(made_by="yzip", fmt=fid):
                 out = self.roundtrip(fid)
                 dest = os.path.join(self.root, "bz_" + fid)
                 subprocess.run([BZ, "x", "-y", f"-o:{dest}", out], capture_output=True, timeout=120)
                 inner = os.path.join(dest, "o.tar")
-                if os.path.exists(inner):  # Bandizip's CLI unpacks .tar.bz2/.tar.xz one layer at a time
+                if os.path.exists(inner):  # The third-party archiver's CLI unpacks .tar.bz2/.tar.xz one layer at a time
                     subprocess.run([BZ, "x", "-y", f"-o:{dest}", inner], capture_output=True, timeout=120)
                 self.assertEqual(tree(os.path.join(dest, "자료")), self.want)
         for bzfmt, ext in (("7z", ".7z"), ("tgz", ".tgz"), ("tar", ".tar")):
-            with self.subTest(made_by="Bandizip", fmt=bzfmt):
+            with self.subTest(made_by="Third-party", fmt=bzfmt):
                 out = os.path.join(self.root, "bz" + ext)
                 subprocess.run([BZ, "c", f"-fmt:{bzfmt}", "-y", out, self.src], capture_output=True, timeout=120)
                 dest = os.path.join(self.root, "yz_" + bzfmt)
@@ -271,8 +271,8 @@ class MultiBlockTests(unittest.TestCase):
                     self.assertEqual(r.returncode, 0)
 
     def test_7z_header_is_compressed(self):
-        """Names, times and CRCs go into an LZMA2-coded header (kEncodedHeader), as 7-Zip and Bandizip write it:
-        with 1,500 tiny files the raw header was 13x the size of Bandizip's whole archive."""
+        """Names, times and CRCs go into an LZMA2-coded header (kEncodedHeader), as 7-Zip and other archivers write it:
+        with 1,500 tiny files the raw header was 13x the size of the third-party archiver's whole archive."""
         many = os.path.join(self.root, "many")
         for i in range(1500):
             os.makedirs(os.path.join(many, f"g{i // 100:02d}"), exist_ok=True)
@@ -338,9 +338,9 @@ class MultiBlockTests(unittest.TestCase):
         with open(os.path.join(self.root, "sx", "f1.txt"), "rb") as g:
             self.assertEqual(sha(g.read()), self.want["sub/f1.txt"])
 
-    def test_bandizip_made_7z_uses_fast_reader(self):
+    def test_reference_made_7z_uses_fast_reader(self):
         if not os.path.exists(BZ):
-            self.skipTest("Bandizip not installed")
+            self.skipTest("the third-party archiver not installed")
         lzmamt.plan = self.saved[0]
         for pw in (None, "Pw1234"):
             with self.subTest(pw=pw):
@@ -349,7 +349,7 @@ class MultiBlockTests(unittest.TestCase):
                                capture_output=True, timeout=300)
                 self.fast.clear()
                 self.assertEqual(self.check(out, pw), self.want)
-                self.assertTrue(self.fast, "Bandizip's 7z layout fell back to py7zr")
+                self.assertTrue(self.fast, "the third-party archiver's 7z layout fell back to py7zr")
 
 
 class SafetyTests(unittest.TestCase):
@@ -383,7 +383,7 @@ class SafetyTests(unittest.TestCase):
     def test_7z_duplicate_names_both_kept(self):
         import py7zr
         arc = os.path.join(self.root, "d.7z")
-        # plain LZMA2 (the layout 7-Zip/Bandizip/yzip write) goes through yzip's own reader; py7zr's default adds
+        # plain LZMA2 (the layout 7-Zip/third-party archivers/yzip write) goes through yzip's own reader; py7zr's default adds
         # BCJ, falls back to py7zr, and py7zr itself hands a repeated name out only once
         with py7zr.SevenZipFile(arc, "w", filters=[{"id": py7zr.FILTER_LZMA2}]) as z:
             z.writestr(b"FIRST", "x.txt")
@@ -472,7 +472,7 @@ class SafetyTests(unittest.TestCase):
         arc = os.path.join(self.root, "v.7z")
         formats.create("7z", [src], arc)
         blob = open(arc, "rb").read()
-        for i in range(0, len(blob), 100_000):  # volumes as 7-Zip / Bandizip name them
+        for i in range(0, len(blob), 100_000):  # volumes as 7-Zip/third-party archivers name them
             with open(f"{arc}.{i // 100_000 + 1:03d}", "wb") as f:
                 f.write(blob[i:i + 100_000])
         self.assertEqual(formats.detect(arc + ".001"), "7z")

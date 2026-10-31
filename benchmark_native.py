@@ -1,4 +1,5 @@
-"""Reproducible Bandizip/yzip ZIP and 7z benchmark harness for Windows."""
+"""Reproducible ZIP and 7z benchmark harness for Windows: yzip against a third-party archiver's CLI
+(path in the YZIP_REF_ARCHIVER environment variable)."""
 from __future__ import annotations
 
 import argparse
@@ -22,7 +23,7 @@ from ctypes import wintypes
 
 
 ROOT = Path(__file__).resolve().parent
-BZ_EXE = Path(r"C:\Program Files\Bandizip\bz.exe")
+BZ_EXE = Path(os.environ.get("YZIP_REF_ARCHIVER") or "YZIP_REF_ARCHIVER-not-set")
 MB = 1024 * 1024
 LARGE_TEXT_BYTES = 8 * MB
 INCOMPRESSIBLE_BYTES = 8 * MB
@@ -89,9 +90,9 @@ def expand_cases(datasets: dict[str, Path], archive_root: Path) -> list[Benchmar
     archive_root = Path(archive_root)
     return [
         BenchmarkCase(dataset, tool, archive_format, operation, threads, 5, Path(source),
-                      archive_root / dataset / f"{('yzip' if tool == 'bandizip' else 'bandizip')}.{archive_format}")
+                      archive_root / dataset / f"{('yzip' if tool == 'reference' else 'reference')}.{archive_format}")
         for dataset, source in datasets.items()
-        for tool in ("bandizip", "yzip")
+        for tool in ("reference", "yzip")
         for archive_format in ("zip", "7z")
         for operation in ("compress", "extract")
         for threads in (1, 4, 8, 16)
@@ -126,7 +127,7 @@ def build_command(case: BenchmarkCase, output_root: Path) -> list[str]:
     output_root = Path(output_root)
     if case.operation == "compress":
         archive = output_root / f"result.{case.format}"
-        if case.tool == "bandizip":
+        if case.tool == "reference":
             return [str(BZ_EXE), "c", f"-fmt:{case.format}", f"-l:{case.level}",
                     f"-t:{case.threads}", "-y", str(archive), str(case.source)]
         return _yzip_command(
@@ -135,7 +136,7 @@ def build_command(case: BenchmarkCase, output_root: Path) -> list[str]:
         )
     if case.operation == "extract":
         extracted = output_root / "extracted"
-        if case.tool == "bandizip":
+        if case.tool == "reference":
             return [str(BZ_EXE), "x", f"-t:{case.threads}", "-y", f"-o:{extracted}", str(case.archive)]
         return _yzip_command(
             ["x", str(case.archive), "-o", str(extracted)], case.threads, output_root / "yzip-temp",
@@ -145,7 +146,7 @@ def build_command(case: BenchmarkCase, output_root: Path) -> list[str]:
 
 def _extract_command(tool: str, archive: Path, destination: Path, threads: int,
                      temp_root: Path) -> list[str]:
-    if tool == "bandizip":
+    if tool == "reference":
         return [str(BZ_EXE), "x", f"-t:{threads}", "-y", f"-o:{destination}", str(archive)]
     return _yzip_command(["x", str(archive), "-o", str(destination)], threads, temp_root)
 
@@ -199,7 +200,7 @@ def _source_root(destination: Path, source: Path) -> Path:
 
 
 def verify_generated_archive(case: BenchmarkCase, archive: Path, destination: Path) -> str:
-    opposite = "bandizip" if case.tool == "yzip" else "yzip"
+    opposite = "reference" if case.tool == "yzip" else "yzip"
     command = _extract_command(opposite, archive, destination, case.threads,
                                destination.parent / "cross-yzip-temp")
     _run_unmeasured(command)
@@ -301,7 +302,7 @@ def _prepare_archives(datasets: dict[str, Path], archive_root: Path) -> None:
     for dataset, source in datasets.items():
         dataset_root = archive_root / dataset
         dataset_root.mkdir(parents=True, exist_ok=True)
-        for tool in ("bandizip", "yzip"):
+        for tool in ("reference", "yzip"):
             for archive_format in ("zip", "7z"):
                 case = BenchmarkCase(dataset, tool, archive_format, "compress", 8, 5, source,
                                      dataset_root / f"{tool}.{archive_format}")
@@ -313,7 +314,7 @@ def _prepare_archives(datasets: dict[str, Path], archive_root: Path) -> None:
                     shutil.move(generated, case.archive)
 
 
-REGRESSION_METHODOLOGY = "paired-yzip-over-bandizip-ratio-v1"
+REGRESSION_METHODOLOGY = "paired-yzip-over-reference-ratio-v1"
 
 
 def _validate_median(value, label: str) -> float:
@@ -330,7 +331,7 @@ def _paired_7z_medians(results: Sequence[BenchmarkResult]) -> dict[str, dict[str
     for result in results:
         case = result.case
         if (case.format != "7z" or case.operation != "compress" or case.threads != 8
-                or case.tool not in ("yzip", "bandizip")):
+                or case.tool not in ("yzip", "reference")):
             continue
         if case.dataset not in pairs:
             raise ValueError(f"unexpected paired regression dataset: {case.dataset}")
@@ -340,7 +341,7 @@ def _paired_7z_medians(results: Sequence[BenchmarkResult]) -> dict[str, dict[str
             result.wall_median_seconds, f"current median for {case.dataset}/{case.tool}"
         )
     missing = [f"{name}/{tool}" for name in DATASET_NAMES
-               for tool in ("yzip", "bandizip") if tool not in pairs[name]]
+               for tool in ("yzip", "reference") if tool not in pairs[name]]
     if missing:
         raise ValueError(f"missing paired regression cases: {missing}")
     return pairs
@@ -353,7 +354,7 @@ def _paired_7z_medians_json(results: Sequence[dict]) -> dict[str, dict[str, floa
             raise ValueError("existing raw result must contain a case object")
         case = result["case"]
         if (case.get("format") != "7z" or case.get("operation") != "compress"
-                or case.get("threads") != 8 or case.get("tool") not in ("yzip", "bandizip")):
+                or case.get("threads") != 8 or case.get("tool") not in ("yzip", "reference")):
             continue
         dataset = case.get("dataset")
         tool = case["tool"]
@@ -365,7 +366,7 @@ def _paired_7z_medians_json(results: Sequence[dict]) -> dict[str, dict[str, floa
             result.get("wall_median_seconds"), f"current median for {dataset}/{tool}"
         )
     missing = [f"{name}/{tool}" for name in DATASET_NAMES
-               for tool in ("yzip", "bandizip") if tool not in pairs[name]]
+               for tool in ("yzip", "reference") if tool not in pairs[name]]
     if missing:
         raise ValueError(f"missing paired regression cases: {missing}")
     return pairs
@@ -394,23 +395,23 @@ def _regression_gate_evidence(current: dict[str, dict[str, float]],
     datasets = {}
     for name in current:
         current_yzip = _validate_median(current[name].get("yzip"), f"current {name}/yzip")
-        current_bandizip = _validate_median(
-            current[name].get("bandizip"), f"current {name}/bandizip"
+        current_reference = _validate_median(
+            current[name].get("reference"), f"current {name}/reference"
         )
         baseline_yzip = _validate_median(baseline[name].get("yzip"), f"baseline {name}/yzip")
-        baseline_bandizip = _validate_median(
-            baseline[name].get("bandizip"), f"baseline {name}/bandizip"
+        baseline_reference = _validate_median(
+            baseline[name].get("reference"), f"baseline {name}/reference"
         )
-        current_ratio = current_yzip / current_bandizip
-        baseline_ratio = baseline_yzip / baseline_bandizip
+        current_ratio = current_yzip / current_reference
+        baseline_ratio = baseline_yzip / baseline_reference
         fraction = current_ratio / baseline_ratio - 1.0
         datasets[name] = {
             "current_yzip_median_seconds": current_yzip,
-            "current_bandizip_median_seconds": current_bandizip,
+            "current_reference_median_seconds": current_reference,
             "baseline_yzip_median_seconds": baseline_yzip,
-            "baseline_bandizip_median_seconds": baseline_bandizip,
-            "current_yzip_bandizip_ratio": current_ratio,
-            "baseline_yzip_bandizip_ratio": baseline_ratio,
+            "baseline_reference_median_seconds": baseline_reference,
+            "current_yzip_reference_ratio": current_ratio,
+            "baseline_yzip_reference_ratio": baseline_ratio,
             "fraction": fraction,
             "limit": limit,
             "passed": fraction <= limit + 1e-12,
@@ -536,8 +537,8 @@ def _build_summary(raw_path: Path, raw_bytes: bytes, results: Sequence[dict],
                    regression_gate: dict, evaluation_provenance: dict | None = None) -> dict:
     paired = _paired_7z_medians_json(results)
     yzip_medians = {name: paired[name]["yzip"] for name in DATASET_NAMES}
-    bandizip_medians = {name: paired[name]["bandizip"] for name in DATASET_NAMES}
-    ratios = {name: yzip_medians[name] / bandizip_medians[name] for name in DATASET_NAMES}
+    reference_medians = {name: paired[name]["reference"] for name in DATASET_NAMES}
+    ratios = {name: yzip_medians[name] / reference_medians[name] for name in DATASET_NAMES}
     dataset_hashes = {
         result["case"]["dataset"]: result["sha256_tree"]
         for result in results
@@ -557,8 +558,8 @@ def _build_summary(raw_path: Path, raw_bytes: bytes, results: Sequence[dict],
         "elapsed_seconds": elapsed,
         "dataset_sha256_trees": dataset_hashes,
         "seven_zip_8_thread_medians_seconds": yzip_medians,
-        "bandizip_seven_zip_8_thread_medians_seconds": bandizip_medians,
-        "seven_zip_8_thread_yzip_bandizip_ratios": ratios,
+        "reference_seven_zip_8_thread_medians_seconds": reference_medians,
+        "seven_zip_8_thread_yzip_reference_ratios": ratios,
         "regression_fraction": regressions,
         "regression_gate": regression_gate,
     }
@@ -577,17 +578,17 @@ def _load_regression_baseline(path: Path) -> dict[str, dict[str, float]]:
     if document.get("regression_methodology") != REGRESSION_METHODOLOGY:
         raise ValueError(f"regression baseline methodology must be {REGRESSION_METHODOLOGY}")
     yzip_medians = document.get("seven_zip_8_thread_medians_seconds")
-    bandizip_medians = document.get("bandizip_seven_zip_8_thread_medians_seconds")
-    ratios = document.get("seven_zip_8_thread_yzip_bandizip_ratios")
-    if not isinstance(yzip_medians, dict) or not isinstance(bandizip_medians, dict):
+    reference_medians = document.get("reference_seven_zip_8_thread_medians_seconds")
+    ratios = document.get("seven_zip_8_thread_yzip_reference_ratios")
+    if not isinstance(yzip_medians, dict) or not isinstance(reference_medians, dict):
         raise ValueError(
-            "regression baseline yzip and Bandizip median fields must be objects"
+            "regression baseline yzip and third-party median fields must be objects"
         )
     if not isinstance(ratios, dict):
         raise ValueError("regression baseline paired ratio field must be an object")
     expected = set(DATASET_NAMES)
     for label, values in (("yzip medians", yzip_medians),
-                          ("Bandizip medians", bandizip_medians), ("ratios", ratios)):
+                          ("third-party medians", reference_medians), ("ratios", ratios)):
         actual = set(values)
         if actual != expected:
             missing = sorted(expected - actual)
@@ -599,14 +600,14 @@ def _load_regression_baseline(path: Path) -> dict[str, dict[str, float]]:
     validated: dict[str, dict[str, float]] = {}
     for name in DATASET_NAMES:
         yzip = _validate_median(yzip_medians[name], f"regression baseline yzip median for {name}")
-        bandizip = _validate_median(
-            bandizip_medians[name], f"regression baseline Bandizip median for {name}"
+        reference = _validate_median(
+            reference_medians[name], f"regression baseline third-party median for {name}"
         )
         ratio = _validate_median(ratios[name], f"regression baseline ratio for {name}")
-        calculated = yzip / bandizip
+        calculated = yzip / reference
         if not math.isclose(ratio, calculated, rel_tol=1e-12, abs_tol=1e-12):
             raise ValueError(f"regression baseline ratio does not match medians for {name}")
-        validated[name] = {"yzip": yzip, "bandizip": bandizip}
+        validated[name] = {"yzip": yzip, "reference": reference}
     return validated
 
 
@@ -637,7 +638,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--runs", type=int, default=7)
     args = parser.parse_args(argv)
     if not args.evaluate_existing and not BZ_EXE.is_file():
-        parser.error(f"Bandizip console tool not found: {BZ_EXE}")
+        parser.error(f"third-party archiver CLI not found (set YZIP_REF_ARCHIVER): {BZ_EXE}")
     if args.evaluate_existing and args.create_baseline:
         parser.error("--evaluate-existing cannot be combined with --create-baseline")
     if args.create_baseline:

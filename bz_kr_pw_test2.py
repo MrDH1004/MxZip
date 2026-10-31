@@ -4,7 +4,7 @@ import tempfile
 
 import pyzipper
 
-BZ = r"C:\Program Files\Bandizip\bz.exe"
+BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
 PW = "p@ss한글"
 with tempfile.TemporaryDirectory() as t:
     for enc in ("utf-8", "cp949", "utf-16-le"):

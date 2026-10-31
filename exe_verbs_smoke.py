@@ -116,7 +116,7 @@ def probe(mode, paths, env=None):
     return r.returncode, [ln.split("\t")[1:] for ln in out.splitlines() if ln.startswith("ITEM\t")], out
 
 
-def yzip_item(items):  # by verb: Bandizip, if installed, adds an item with identical text
+def yzip_item(items):  # by verb: The third-party archiver, if installed, adds an item with identical text
     return [it for it in items if len(it) > 2 and it[2] == "yzip.compress"]
 
 
@@ -240,7 +240,7 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
         with ziplib.Archive(out) as a:
             check("invoke on one file: archive valid and identical", a.test() == [] and [e.name for e in a.entries()] == ["b.bin"])
         import zipfile
-        with zipfile.ZipFile(out) as zf:  # yzip's writer streams with data descriptors; proves yzip (not Bandizip) ran
+        with zipfile.ZipFile(out) as zf:  # yzip's writer streams with data descriptors; proves yzip (not the third-party archiver) ran
             check("invoke on one file: written by yzip", all(i.flag_bits & 0x08 for i in zf.infolist()),
                   [hex(i.flag_bits) for i in zf.infolist()])
     code, _, raw = probe("invoke", trio, env)
@@ -262,7 +262,7 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
             names = sorted(e.name for e in a.entries() if not e.is_dir)
             ok7 = a.test() == []
         check("exe-made 7z is valid and complete", ok7 and any("c.txt" in n for n in names), names)
-    # extract items: only for archives, in the extract section (before the compress items), Bandizip-style
+    # extract items: only for archives, in the extract section (before the compress items), the usual archiver style
     # "<folder>\에 압축 풀기" naming the real target, numbered when that folder exists
     verbs = [it[2] for it in probe("list", [z])[1] if len(it) > 2 and it[2].startswith("yzip.")]
     check("archive: extract items only, no compress items", verbs == ["yzip.extracthere", "yzip.extractfolder"], verbs)

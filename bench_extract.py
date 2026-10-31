@@ -28,4 +28,4 @@ with tempfile.TemporaryDirectory(prefix="yzdata_") as data:
     out = os.path.join(data, "bz")
     t = time.perf_counter()
     subprocess.run([bench.BZ, "x", "-y", f"-o:{out}", z], capture_output=True)
-    print(f"bandizip extract: {time.perf_counter() - t:.2f}s")
+    print(f"reference extract: {time.perf_counter() - t:.2f}s")

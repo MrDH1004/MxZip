@@ -15,7 +15,7 @@ from ziplib import BadPassword
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEVEN = os.path.join(HERE, "tools", "7z.exe")
-BZ = r"C:\Program Files\Bandizip\bz.exe"
+BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
 
 
 def key(e):
@@ -60,10 +60,10 @@ class SevenZipHeaderTests(unittest.TestCase):
                 subprocess.run([SEVEN, "a", "-y", path, self.src] + args, capture_output=True, check=True)
                 out.append((path, pw, tag))
         if os.path.exists(BZ):
-            path = os.path.join(self.root, "bandizip.7z")
+            path = os.path.join(self.root, "reference.7z")
             subprocess.run([BZ, "c", "-fmt:7z", "-y", path, self.src], capture_output=True)
             if os.path.exists(path):
-                out.append((path, None, "bandizip"))
+                out.append((path, None, "reference"))
         return out
 
     def test_same_listing_and_plan_as_py7zr(self):

@@ -1,4 +1,4 @@
-"""Smaller formats Bandizip reads that neither 7-Zip nor the stdlib cover, decoded here in Python:
+"""Smaller formats the third-party archiver reads that neither 7-Zip nor the stdlib cover, decoded here in Python:
 
 streams (one file):   .br (Brotli), .lz (lzip), .lz4 (LZ4 frame / legacy), .aes (AES Crypt, needs the password)
 archives:             .uu / .uue / .xxe (uuencode, xxencode, base64 'begin-base64'), .asar (Electron)

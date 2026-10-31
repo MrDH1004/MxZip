@@ -20,7 +20,7 @@ The original raw artifact is `.omc/artifacts/native-performance-final/current.js
 
 At requested 8 threads, the five-dataset wall-time geometric means were:
 
-| Operation | yzip/Bandizip | yzip wins |
+| Operation | yzip/the third-party archiver | yzip wins |
 |---|---:|---:|
 | ZIP compression | 3.1381x | 0/5 |
 | ZIP extraction | 3.5101x | 0/5 |
@@ -29,7 +29,7 @@ At requested 8 threads, the five-dataset wall-time geometric means were:
 
 These are end-to-end CLI measurements including process startup. Extraction follows the benchmark's opposite-producer archive preparation, so it does not compare both tools against identical archive bytes.
 
-At requested 8 threads, compression archive-size geometric means were 0.9891x for ZIP and 1.7256x for 7z (yzip/Bandizip). The 7z result is dominated by `small-files`, where the ratio was 12.6758x. Across each tool's 20 requested-8-thread cases, median CPU time was 0.140625 seconds for Bandizip and 0.304688 seconds for yzip. Median peak RSS was 13.08 MiB and 39.97 MiB respectively; observed maxima were 199.51 MiB and 282.23 MiB. These aggregate CLI processes and are not codec-only resource measurements.
+At requested 8 threads, compression archive-size geometric means were 0.9891x for ZIP and 1.7256x for 7z (yzip/the third-party archiver). The 7z result is dominated by `small-files`, where the ratio was 12.6758x. Across each tool's 20 requested-8-thread cases, median CPU time was 0.140625 seconds for the third-party archiver and 0.304688 seconds for yzip. Median peak RSS was 13.08 MiB and 39.97 MiB respectively; observed maxima were 199.51 MiB and 282.23 MiB. These aggregate CLI processes and are not codec-only resource measurements.
 
 The original historical absolute gate compares current yzip 7z compression wall times at requested 8 threads directly with the committed Task 1 yzip wall times. It failed in two datasets and therefore failed overall:
 
@@ -43,16 +43,16 @@ The original historical absolute gate compares current yzip 7z compression wall 
 
 The matrix ran while an external video workload (`pipeline`/RIFE/FFmpeg) was observed on the machine. Absolute wall-time comparison against a static historical run is vulnerable to that kind of machine-load difference. This does not erase the original gate failure; it explains why the original result is retained as historical evidence rather than used as the final release decision.
 
-The evaluated artifact uses the declared `paired-yzip-over-bandizip-ratio-v1` normalization for each dataset:
+The evaluated artifact uses the declared `paired-yzip-over-reference-ratio-v1` normalization for each dataset:
 
 ```text
-fraction = ((current yzip median / current Bandizip median)
-            / (baseline yzip median / baseline Bandizip median)) - 1
+fraction = ((current yzip median / current the third-party archiver median)
+            / (baseline yzip median / baseline the third-party archiver median)) - 1
 ```
 
-The common Bandizip measurement normalizes machine-level timing shifts within each current/baseline pair. It does not claim identical codec work or remove every possible source of noise.
+The common the third-party archiver measurement normalizes machine-level timing shifts within each current/baseline pair. It does not claim identical codec work or remove every possible source of noise.
 
-| Dataset | Current yzip/Bandizip | Baseline yzip/Bandizip | Normalized fraction | Gate (<= +5%) |
+| Dataset | Current yzip/the third-party archiver | Baseline yzip/the third-party archiver | Normalized fraction | Gate (<= +5%) |
 |---|---:|---:|---:|---:|
 | large-text | 4.527169x | 5.027714x | -9.9557% | PASS |
 | incompressible | 6.082878x | 6.329592x | -3.8978% | PASS |
@@ -66,7 +66,7 @@ All five normalized fractions are at or below the +5% limit. The Task 6 paired-n
 
 Conditions: level 5, requested threads 1/4/8/16, five datasets, one warm-up plus seven measured subprocess runs, process startup included, and cross-extraction SHA-256 verification outside the timed subprocess. The thread values are requests, not measured internal worker counts. Extraction compares opposite-producer archives rather than identical archive bytes.
 
-At requested 8 threads, yzip/Bandizip wall-time geometric means were:
+At requested 8 threads, yzip/the third-party archiver wall-time geometric means were:
 
 | Operation | Ratio | Result |
 |---|---:|---|
@@ -75,15 +75,15 @@ At requested 8 threads, yzip/Bandizip wall-time geometric means were:
 | 7z compression | 3.755x | yzip slower |
 | 7z extraction | 9.355x | yzip slower |
 
-ZIP compression archive-size geometric mean was 0.989x yzip/Bandizip. 7z was 1.712x, dominated by the 1,500-small-file case where yzip output was 12.292x the Bandizip output. At requested 8 threads, case-level peak-RSS medians were about 12.8 MiB for Bandizip and 39.0 MiB for yzip; observed maxima were about 199.5 MiB and 282.0 MiB respectively. These include each CLI runtime and are not codec-only measurements.
+ZIP compression archive-size geometric mean was 0.989x yzip/the third-party archiver. 7z was 1.712x, dominated by the 1,500-small-file case where yzip output was 12.292x the the third-party archiver output. At requested 8 threads, case-level peak-RSS medians were about 12.8 MiB for the third-party archiver and 39.0 MiB for yzip; observed maxima were about 199.5 MiB and 282.0 MiB respectively. These include each CLI runtime and are not codec-only measurements.
 
 Raw ignored artifact: `.omc/artifacts/native-performance-baseline/baseline-five-datasets.json`. The committed evidence manifest is `docs/performance/native-benchmark-baseline.json`.
 
 ## Task 4: plain 7z extraction
 
-This benchmark used identical archive bytes for existing yzip, native opt-in, and Bandizip; requested workers were 8. Each condition used one warm-up and seven measured fresh subprocess runs with SHA-256 verification.
+This benchmark used identical archive bytes for existing yzip, native opt-in, and the third-party archiver; requested workers were 8. Each condition used one warm-up and seven measured fresh subprocess runs with SHA-256 verification.
 
-| Dataset | Existing yzip median | Native median | Bandizip median |
+| Dataset | Existing yzip median | Native median | the third-party archiver median |
 |---|---:|---:|---:|
 | small-files (1,500) | 1.7411 s | 2.8830 s | 0.8713 s |
 | large-file (32 MiB) | 0.4513 s | 0.4796 s | 0.0531 s |
@@ -99,7 +99,7 @@ Canonical ignored evidence: `.superpowers/sdd/2026-10-28-native-performance-hybr
 
 Conditions: same source, level 5, requested threads 1 and 8, one warm-up plus seven measured fresh subprocess runs. Cross-product extraction and tree hashes were integrity checks outside compression timing. Every native run recorded actual native selection.
 
-| Dataset | Threads | Existing yzip | Native | Bandizip | Native vs existing |
+| Dataset | Threads | Existing yzip | Native | the third-party archiver | Native vs existing |
 |---|---:|---:|---:|---:|---:|
 | large-text | 1 | 0.1806 s | 0.3352 s | 0.0693 s | +85.6% |
 | large-text | 8 | 0.1814 s | 0.3093 s | 0.0488 s | +70.5% |

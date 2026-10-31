@@ -289,7 +289,7 @@ def _decode_folder_bytes(f, raw: bytes, unpack: list[int], password, limit: int)
             dict_size = min((2 | (d & 1)) << (d // 2 + 11), 1 << 30)
             out = lzma.LZMADecompressor(lzma.FORMAT_RAW, filters=[
                 {"id": lzma.FILTER_LZMA2, "dict_size": max(dict_size, 4096)}]).decompress(raw, max_length=size)
-        else:  # LZMA1, what 7-Zip and Bandizip use for headers
+        else:  # LZMA1, what 7-Zip and other archivers use for headers
             if len(props) != 5:
                 raise BadHeader("LZMA properties")
             lclppb, dict_size = props[0], struct.unpack("<I", props[1:5])[0]

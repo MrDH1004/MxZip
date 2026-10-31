@@ -9,8 +9,8 @@ GUI_GROUPS = ["test_run_job", "test_archive_verb", "test_extract_verbs", "test_m
               "test_formats_gui", "test_simple_window", "test_settings", "test_update_prompt", "test_update_check_scope"]
 
 jobs = [("core unit tests", [sys.executable, "-W", "ignore", "-m", "unittest", "test_ziplib"]),
-        ("zip writer (zip64, AES, store, bz.exe/tar interop)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_zipwriter"]),
-        ("other formats (7z, tar.*, gz/bz2/xz/zst, bz.exe interop)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_formats"]),
+        ("zip writer (zip64, AES, store, the third-party CLI/tar interop)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_zipwriter"]),
+        ("other formats (7z, tar.*, gz/bz2/xz/zst, the third-party CLI interop)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_formats"]),
         ("native archives (RAR/ISO/CAB/EGG/ALZ)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_nativearchive"]),
         ("right-click quick compress entry (Qt only when needed)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_quick_entry"]),
         ("exit path (no DLL detach)", [sys.executable, "-W", "ignore", "-m", "unittest", "test_hard_exit"]),

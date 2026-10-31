@@ -246,7 +246,7 @@ def test_archive_verb():
     run_main(["--archive", files["a.txt"]])
     gui.Main.show, gui.CompressDialog.exec = orig_show, orig_exec
     check("--archive: main window never shown", not shown, shown)
-    check("--archive: compresses at once, no options dialog (Bandizip style)", not dialogs, dialogs)
+    check("--archive: compresses at once, no options dialog (the usual archiver style)", not dialogs, dialogs)
     check("--archive single file: no error boxes", not bad_boxes(), repr(bad_boxes()))
     check("--archive single file: a.zip created", os.path.exists(out))
     if os.path.exists(out):
@@ -342,7 +342,7 @@ def test_extract_verbs():
     run_main(["--extract-folder", z])
     check("--extract-folder, folder exists: original untouched", os.listdir(os.path.join(t, "pkg")) == ["a.txt"]
           and open(os.path.join(t, "pkg", "a.txt")).read() == "OLD", repr(os.listdir(os.path.join(t, "pkg"))))
-    check("--extract-folder, folder exists: new folder 'pkg (2)' (Bandizip style)",
+    check("--extract-folder, folder exists: new folder 'pkg (2)' (the usual archiver style)",
           os.path.exists(os.path.join(t, "pkg (2)", "a.txt")), repr(os.listdir(t)))
 
 

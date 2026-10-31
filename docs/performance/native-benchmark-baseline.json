@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "regression_methodology": "paired-yzip-over-bandizip-ratio-v1",
+  "regression_methodology": "paired-yzip-over-reference-ratio-v1",
   "raw_json_path": ".omc\\artifacts\\native-performance-baseline\\baseline-five-datasets.json",
   "raw_json_sha256": "21dbd8c8cadfa431a5a0e06d244710d332ce08cabada3d9c776a27bcf572b465",
   "dataset_count": 5,
@@ -22,14 +22,14 @@
     "mixed-project": 0.38204910000786185,
     "large-file": 0.483163600001717
   },
-  "bandizip_seven_zip_8_thread_medians_seconds": {
+  "reference_seven_zip_8_thread_medians_seconds": {
     "large-text": 0.051381400000536814,
     "incompressible": 0.28862649999791756,
     "small-files": 0.32310350000625476,
     "mixed-project": 0.09928100000252016,
     "large-file": 0.13913660000253003
   },
-  "seven_zip_8_thread_yzip_bandizip_ratios": {
+  "seven_zip_8_thread_yzip_reference_ratios": {
     "large-text": 5.027714309104976,
     "incompressible": 6.329592050657658,
     "small-files": 1.756486388975119,
