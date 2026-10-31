@@ -84,7 +84,7 @@ static std::wstring menu_label(const std::wstring& out) {
             esc += L'&';
         esc += c;
     }
-    return esc + L"으로 압축하기 - &yzip";  // Bandizip uses the same wording with &Z, so name ourselves and take Y
+    return esc + L"으로 압축하기 - &MxZip";  // Bandizip uses the same wording with &Z, so name ourselves and take Y
 }
 
 static std::wstring read_command() {
@@ -318,10 +318,10 @@ public:
         if (!out_.empty() && !archives && (enabled & 1)) {  // archives get the extract items only
             cmds_.push_back(CMD_COMPRESS);
             labels.push_back(paths_.size() > 1 && separate_archives()
-                             ? (english ? L"Compress each item to ZIP - &yzip" : L"각각 ZIP 파일로 압축하기 - &yzip")
-                             : (english ? L"Compress to " + escape_amp(file_name(out_)) + L" - &yzip" : menu_label(out_)));
+                             ? (english ? L"Compress each item to ZIP - &MxZip" : L"각각 ZIP 파일로 압축하기 - &MxZip")
+                             : (english ? L"Compress to " + escape_amp(file_name(out_)) + L" - &MxZip" : menu_label(out_)));
             cmds_.push_back(CMD_DIALOG);
-            labels.push_back(english ? L"Compress with yzip(&W)..." : L"yzip으로 압축하기(&W)...");
+            labels.push_back(english ? L"Compress with MxZip(&W)..." : L"MxZip으로 압축하기(&W)...");
         }
         if (cmds_.empty())
             return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);

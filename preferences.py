@@ -54,7 +54,7 @@ class PreferencesDialog(QDialog):
         layout.setSpacing(16)
         self.title = QLabel("환경설정")
         self.title.setObjectName("settingsTitle")
-        self.subtitle = QLabel("yzip의 작업 방식과 사용 환경을 설정하세요.")
+        self.subtitle = QLabel("MxZip의 작업 방식과 사용 환경을 설정하세요.")
         self.subtitle.setObjectName("settingsSubtitle")
         self.subtitle.setWordWrap(True)
         header = QVBoxLayout()
@@ -230,7 +230,7 @@ class PreferencesDialog(QDialog):
         self.assoc_list = QTreeWidget()
         self.assoc_list.setObjectName("settingsAssocList")
         self.assoc_list.setAccessibleName("연결 가능한 파일 형식 목록")
-        self.assoc_list.setToolTip("체크는 yzip 연결 등록 여부입니다. 기본 앱 변경은 Windows 기본 앱 설정을 이용하세요. EXE는 연결 대상에서 제외됩니다.")
+        self.assoc_list.setToolTip("체크는 MxZip 연결 등록 여부입니다. 기본 앱 변경은 Windows 기본 앱 설정을 이용하세요. EXE는 연결 대상에서 제외됩니다.")
         self.assoc_list.setHeaderLabels(["확장자", "파일 형식", "현재 기본 앱"])
         self.assoc_list.setRootIsDecorated(False)
         self.assoc_list.setUniformRowHeights(True)
@@ -270,7 +270,7 @@ class PreferencesDialog(QDialog):
                 for ext, item in self._association_items.items():
                     item.setCheckState(0, Qt.CheckState.Checked if ext in registered else Qt.CheckState.Unchecked)
                     is_yzip, name = current.get(ext, (False, "없음"))
-                    item.setText(2, "yzip" if is_yzip else name or "없음")
+                    item.setText(2, "MxZip" if is_yzip else name or "없음")
             finally:
                 self.assoc_list.blockSignals(False)
             self._association_ready = True
@@ -327,7 +327,7 @@ class PreferencesDialog(QDialog):
         threads = self._spin(form, "worker_threads", "작업 스레드 수", 0, 256)
         threads.setSpecialValueText("자동")
         self._path(form, "temp_dir", "임시 폴더")
-        self._button(form, "yzip 임시 파일 정리…", self._cleanup_temp)
+        self._button(form, "MxZip 임시 파일 정리…", self._cleanup_temp)
         self._hint(form, "정리 전에 대상 파일과 폴더를 확인할 수 있습니다.")
 
     def _update_tab(self):
@@ -350,7 +350,7 @@ class PreferencesDialog(QDialog):
         self._hint(form, "초기화와 가져오기는 저장 버튼을 눌러야 저장됩니다. 파일연결과 업데이트 기록은 포함하지 않습니다.")
         form.addRow(self._separator())
         self._button(form, "오류 로그 폴더 열기", self._open_log_folder)
-        self._button(form, "yzip 정보", self._about)
+        self._button(form, "MxZip 정보", self._about)
         self._button(form, "라이선스 보기", self._licenses)
 
     def _set_values(self, values):
@@ -474,7 +474,7 @@ class PreferencesDialog(QDialog):
             self._guard("설정 가져오기", lambda: self.import_file(path))
 
     def _export_settings(self):
-        path, _ = QFileDialog.getSaveFileName(self, "설정 내보내기", "yzip-settings.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, "설정 내보내기", "MxZip-settings.json", "JSON (*.json)")
         if path:
             self._guard("설정 내보내기", lambda: self.export_file(path))
 
@@ -531,7 +531,7 @@ class PreferencesDialog(QDialog):
             if callback is not None:
                 self._guard("업데이트", lambda: callback(rel, None, False))
             else:
-                QMessageBox.information(self, "업데이트", f"새 버전 yzip {rel.version}이 있습니다.\n"
+                QMessageBox.information(self, "업데이트", f"새 버전 MxZip {rel.version}이 있습니다.\n"
                                         "메인 창의 업데이트 메뉴에서 설치할 수 있습니다.")
 
     def _cleanup_temp(self):
@@ -540,12 +540,12 @@ class PreferencesDialog(QDialog):
     def _confirm_cleanup(self):
         candidates = appcore.cleanup_temp(dry_run=True)
         if not candidates:
-            QMessageBox.information(self, "임시 파일 정리", "정리할 yzip 임시 파일이 없습니다.")
+            QMessageBox.information(self, "임시 파일 정리", "정리할 MxZip 임시 파일이 없습니다.")
             return
         box = QMessageBox(self)
         box.setWindowTitle("임시 파일 정리")
         box.setTextFormat(Qt.TextFormat.PlainText)
-        box.setText(f"다음 yzip 임시 파일/폴더 {len(candidates)}개를 삭제할까요?")
+        box.setText(f"다음 MxZip 임시 파일/폴더 {len(candidates)}개를 삭제할까요?")
         box.setInformativeText("자세히 보기를 눌러 전체 경로를 확인하세요.")
         box.setDetailedText("\n".join(str(path) for path in candidates))
         box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -567,7 +567,7 @@ class PreferencesDialog(QDialog):
         self._guard("오류 로그 폴더", open_folder)
 
     def _about(self):
-        QMessageBox.about(self, "yzip 정보", f"<b>yzip {__version__}</b><br>가볍고 빠른 압축 프로그램<br>"
+        QMessageBox.about(self, "MxZip 정보", f"<b>MxZip {__version__}</b><br>가볍고 빠른 압축 프로그램<br>"
                           f"<a href='https://github.com/{REPO}'>github.com/{REPO}</a><br>MIT License")
 
     def _licenses(self):
@@ -588,7 +588,7 @@ class PreferencesDialog(QDialog):
         dialog = QDialog(self)
         dialog.setObjectName("settingsDialog")
         dialog.setStyleSheet(PREFERENCES_QSS)
-        dialog.setWindowTitle("yzip 및 포함 소프트웨어 라이선스")
+        dialog.setWindowTitle("MxZip 및 포함 소프트웨어 라이선스")
         dialog.resize(700, 500)
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(24, 22, 24, 18)

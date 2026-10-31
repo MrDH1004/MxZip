@@ -10,18 +10,18 @@
 
 [Setup]
 AppId={{B3F7E2A1-6C4D-4E8B-9A15-2D7C8E0F4A63}
-AppName=yzip
+AppName=MxZip
 AppVersion={#AppVersion}
-AppVerName=yzip {#AppVersion}
-AppPublisher=yzip
+AppVerName=MxZip {#AppVersion}
+AppPublisher=YMX
 AppPublisherURL=https://github.com/MrDH1004/yzip
 AppSupportURL=https://github.com/MrDH1004/yzip/issues
 AppUpdatesURL=https://github.com/MrDH1004/yzip/releases
 VersionInfoVersion={#AppVersion}
-VersionInfoProductName=yzip
+VersionInfoProductName=MxZip
 VersionInfoProductVersion={#AppVersion}
 VersionInfoProductTextVersion={#AppVersion}
-VersionInfoDescription=yzip setup
+VersionInfoDescription=MxZip setup
 VersionInfoCopyright=Copyright (c) 2026 MrDH1004. MIT License.
 DefaultDirName={localappdata}\Programs\yzip
 DisableProgramGroupPage=yes
@@ -32,7 +32,7 @@ OutputDir=..\dist
 OutputBaseFilename=yzip-setup-{#AppVersion}
 SetupIconFile=..\yzip.ico
 UninstallDisplayIcon={app}\yzip.exe
-UninstallDisplayName=yzip
+UninstallDisplayName=MxZip
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -45,20 +45,23 @@ RestartApplications=no
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
-Name: "assoc"; Description: "압축 파일(.zip, .7z, .tar 등)을 yzip으로 열기"
+Name: "assoc"; Description: "압축 파일(.zip, .7z, .tar 등)을 MxZip으로 열기"
 Name: "autoupdate"; Description: "업데이트 자동 확인 (앱을 실행할 때마다 GitHub에 최신 버전 문의)"
 Name: "desktopicon"; Description: "바탕 화면에 바로 가기 만들기"; Flags: unchecked
 
 [InstallDelete]
 ; libraries of the previous build must not linger next to the new ones
 Type: filesandordirs; Name: "{app}\_internal"
+; shortcuts of the yzip name (renamed to MxZip in 1.0.22)
+Type: files; Name: "{userprograms}\yzip.lnk"
+Type: files; Name: "{userdesktop}\yzip.lnk"
 
 [Files]
 Source: "..\dist\yzip\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{userprograms}\yzip"; Filename: "{app}\yzip.exe"
-Name: "{userdesktop}\yzip"; Filename: "{app}\yzip.exe"; Tasks: desktopicon
+Name: "{userprograms}\MxZip"; Filename: "{app}\yzip.exe"
+Name: "{userdesktop}\MxZip"; Filename: "{app}\yzip.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\yzip.exe"; Parameters: "--register-shell"; Flags: runhidden waituntilterminated
@@ -66,7 +69,7 @@ Filename: "{app}\yzip.exe"; Parameters: "--register-shell"; Flags: runhidden wai
 Filename: "{app}\yzip.exe"; Parameters: "--associate"; Tasks: assoc; Flags: runhidden waituntilterminated; Check: not IsUpdate
 Filename: "{app}\yzip.exe"; Parameters: "--auto-update on"; Tasks: autoupdate; Flags: runhidden waituntilterminated; Check: not IsUpdate
 Filename: "{app}\yzip.exe"; Parameters: "--auto-update off"; Tasks: not autoupdate; Flags: runhidden waituntilterminated; Check: not IsUpdate
-Filename: "{app}\yzip.exe"; Description: "yzip 실행"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\yzip.exe"; Description: "MxZip 실행"; Flags: nowait postinstall skipifsilent
 Filename: "{app}\yzip.exe"; Parameters: "--updated"; Flags: nowait; Check: IsUpdate
 
 [UninstallRun]

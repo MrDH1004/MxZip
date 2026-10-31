@@ -46,7 +46,7 @@ class ReleaseVersionContractTests(unittest.TestCase):
 
         contract = installer_setup_contract(ROOT / "installer" / "yzip.iss", version.__version__)
         self.assertEqual(version.__version__, contract["AppVersion"])
-        self.assertEqual(f"yzip {version.__version__}", contract["AppVerName"])
+        self.assertEqual(f"MxZip {version.__version__}", contract["AppVerName"])
         self.assertEqual(version.__version__, contract["VersionInfoVersion"])
         self.assertEqual(version.__version__, contract["VersionInfoProductVersion"])
         self.assertEqual(f"yzip-setup-{version.__version__}", contract["OutputBaseFilename"])

@@ -495,7 +495,7 @@ def test_simple_window():
           (w.pages.currentIndex(), w.toolbar.isVisible()))
     check("simple: home page exposes 환경설정", w.settings_btn.text().strip() == "환경설정", w.settings_btn.text())
     check("simple: main window title and home version show the version",
-          w.windowTitle() == f"yzip {gui.__version__}" and w.findChild(QLabel, "homeVersion").text() == f"yzip {gui.__version__}",
+          w.windowTitle() == f"{gui.APP} {gui.__version__}" and w.findChild(QLabel, "homeVersion").text() == f"{gui.APP} {gui.__version__}",
           (w.windowTitle(), w.findChild(QLabel, "homeVersion").text()))
     w.open_archive(z)
     app.processEvents()
@@ -538,7 +538,7 @@ def test_simple_window():
     check("browse: header shows format, file count and size; no lock for a plain archive",
           w.badge.text() == "ZIP" and "파일 3개" in w.arch_meta.text() and not w.lock.isVisibleTo(w), w.arch_meta.text())
     check("browse: archive window title keeps the version",
-          w.windowTitle().endswith(f" - yzip {gui.__version__}"), w.windowTitle())
+          w.windowTitle().endswith(f" - {gui.APP} {gui.__version__}"), w.windowTitle())
     keys = {a.shortcut().toString() for a in w.actions()}
     check("simple: shortcuts kept although the actions are hidden", {"Ctrl+E", "Ctrl+O", "Ctrl+N", "Del", "Ctrl+T"} <= keys, keys)
     dlg = gui.ExtractDialog(w, t, 0)

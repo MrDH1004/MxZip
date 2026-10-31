@@ -244,7 +244,7 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(translate_text("새 버전 <b>yzip 2.7</b>이(가) 나왔습니다. 지금 버전: 2.6"),
                          "New version <b>yzip 2.7</b> is available. Current version: 2.6")
         self.assertEqual(translate_text("압축하기 환경설정.zip"), "Compressing 환경설정.zip")
-        self.assertEqual(translate_text("100% 압축 푸는 중... - yzip"), "100% Extracting... - yzip")
+        self.assertEqual(translate_text("100% 압축 푸는 중... - MxZip"), "100% Extracting... - MxZip")
         self.assertEqual(translate_text("C:/환경설정/닫기.zip"), "C:/환경설정/닫기.zip")
 
     def test_actual_main_preferences_compress_extract_progress(self):

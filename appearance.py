@@ -33,7 +33,7 @@ TRANSLATIONS = dict(tuple(part.replace(r"\n", "\n") for part in line.split("|", 
 한국어|Korean
 영어|English
 환경설정|Preferences
-yzip 환경설정|yzip Preferences
+MxZip 환경설정|MxZip Preferences
 압축|Compression
 압축하기|Compress
 압축 해제|Extraction
@@ -113,8 +113,8 @@ yzip 환경설정|yzip Preferences
 자동 업데이트|Automatic updates
 지금 업데이트|Update now
 나중에|Later
-yzip 업데이트|yzip update
-yzip 정보|About yzip
+MxZip 업데이트|MxZip update
+MxZip 정보|About MxZip
 가볍고 빠른 압축 프로그램|A lightweight, fast archive manager
 파일 연결|File associations
 파일 연결하기|Associate file types
@@ -144,9 +144,9 @@ yzip 정보|About yzip
 다른 위치에 저장|Save elsewhere
 압축할 파일 선택|Select files to compress
 추가할 파일|Files to add
-yzip을 실행할 때마다 최신 버전을 확인하고, 새 버전이 있으면 팝업으로 묻습니다.|Check for updates on startup and ask before installing a new version.
-아래 목록의 파일 확장자를 한꺼번에 yzip으로 여는 연결로 등록합니다.|Register the extensions below to open with yzip.
-더블클릭하면 yzip으로 열 압축 파일 형식을 고르세요.|Choose archive types to open with yzip on double-click.
+MxZip을 실행할 때마다 최신 버전을 확인하고, 새 버전이 있으면 팝업으로 묻습니다.|Check for updates on startup and ask before installing a new version.
+아래 목록의 파일 확장자를 한꺼번에 MxZip으로 여는 연결로 등록합니다.|Register the extensions below to open with MxZip.
+더블클릭하면 MxZip으로 열 압축 파일 형식을 고르세요.|Choose archive types to open with MxZip on double-click.
 성능|Performance
 작업 스레드 수|Worker threads
 임시 폴더|Temporary folder
@@ -182,7 +182,7 @@ yzip을 실행할 때마다 최신 버전을 확인하고, 새 버전이 있으�
 전체 해제|Clear all
 Windows 기본 앱 열기|Open Windows default apps
 기본 앱 설정|Default app settings
-체크는 yzip 연결 등록 여부입니다. Windows에서 지정한 기본 앱은 별도로 표시됩니다. 기존 기본 앱이 유지되면 Windows 기본 앱 설정에서 변경하세요. EXE는 연결 대상에서 제외됩니다.|Checkboxes show yzip registrations; Windows default apps are shown separately. Use Windows default app settings to change an existing default. EXE files are excluded.
+체크는 MxZip 연결 등록 여부입니다. Windows에서 지정한 기본 앱은 별도로 표시됩니다. 기존 기본 앱이 유지되면 Windows 기본 앱 설정에서 변경하세요. EXE는 연결 대상에서 제외됩니다.|Checkboxes show MxZip registrations; Windows default apps are shown separately. Use Windows default app settings to change an existing default. EXE files are excluded.
 탐색기 우클릭 메뉴 사용|Enable Explorer context menu
 여기에 풀기|Extract here
 폴더에 풀기|Extract to folder
@@ -200,7 +200,7 @@ Windows 기본 앱 열기|Open Windows default apps
 물어보기|Ask
 해제 후 폴더 열기|Open folder after extraction
 낮은 우선순위로 작업|Run at low priority
-yzip 임시 파일 정리…|Clean yzip temporary files…
+MxZip 임시 파일 정리…|Clean MxZip temporary files…
 정리 전에 대상 파일과 폴더를 확인할 수 있습니다.|Review the files and folders before cleanup.
 현재 버전|Current version
 지금 업데이트 확인|Check for updates now
@@ -216,10 +216,10 @@ yzip 임시 파일 정리…|Clean yzip temporary files…
 오류 로그 폴더 열기|Open error log folder
 라이선스 보기|View licenses
 라이선스|Licenses
-yzip 및 포함 소프트웨어 라이선스|yzip and bundled software licenses
+MxZip 및 포함 소프트웨어 라이선스|MxZip and bundled software licenses
 설정 초기화|Reset settings
 환경설정을 기본값으로 되돌릴까요?\n적용을 눌러야 저장됩니다.|Restore default preferences?\nPress Apply to save.
-정리할 yzip 임시 파일이 없습니다.|There are no yzip temporary files to clean.
+정리할 MxZip 임시 파일이 없습니다.|There are no MxZip temporary files to clean.
 자세히 보기를 눌러 전체 경로를 확인하세요.|Click Show Details to review the full paths.
 임시 파일 정리를 마쳤습니다.|Temporary files cleaned.
 설정 적용|Apply settings
@@ -229,11 +229,11 @@ yzip 및 포함 소프트웨어 라이선스|yzip and bundled software licenses
 # Anchored patterns keep filenames/error payloads opaque; no substring replacement
 # on arbitrary plain text. HTML is split into text nodes before translation.
 TRANSLATIONS.update({
-    "yzip의 작업 방식과 사용 환경을 설정하세요.": "Choose how yzip works and looks.",
+    "MxZip의 작업 방식과 사용 환경을 설정하세요.": "Choose how MxZip works and looks.",
     "변경한 설정은 저장을 누르면 적용됩니다.": "Select Save to apply your changes.",
     "설정 섹션": "Settings sections",
     "언어와 화면 표시를 원하는 방식으로 맞추세요.": "Choose your language and display preferences.",
-    "yzip으로 열 파일 형식을 선택하세요.": "Choose which file types to open with yzip.",
+    "MxZip으로 열 파일 형식을 선택하세요.": "Choose which file types to open with MxZip.",
     "확장자 또는 파일 형식 검색": "Search extensions or file types",
     "검색 결과가 없습니다.": "No results found.",
     "검색은 목록만 필터링하며 선택한 연결은 유지됩니다.": "Filtering keeps your file association selections.",
@@ -272,9 +272,9 @@ _PATTERNS = [
     (r"선택한 ([\d,]+)개 항목만", r"Only the selected \1 items"),
     (r"지원하는 파일 형식 \(([\d,]+)개\)", r"Supported file types (\1)"),
     (r"([\d,]+)개 항목을 압축 파일에서 삭제할까요\?", r"Delete \1 items from the archive?"),
-    (r"새 버전 yzip (.+)이 있습니다\.\n지금 업데이트하시겠습니까\?", r"yzip \1 is available.\nUpdate now?"),
+    (r"새 버전 MxZip (.+)이 있습니다\.\n지금 업데이트하시겠습니까\?", r"MxZip \1 is available.\nUpdate now?"),
     (r"새 버전 (.+)이\(가\) 나왔습니다\. 지금 버전: (.+)", r"New version \1 is available. Current version: \2"),
-    (r"최신 버전입니다\. \(yzip (.+)\)", r"You are up to date. (yzip \1)"),
+    (r"최신 버전입니다\. \(MxZip (.+)\)", r"You are up to date. (MxZip \1)"),
     (r"업데이트 내려받는 중 \((.+)\)", r"Downloading update (\1)"),
     (r"(.+) 형식은 암호를 지원하지 않습니다\.", r"The \1 format does not support passwords."),
     (r"걸린 시간 (.+)", r"Elapsed time \1"),
@@ -283,10 +283,10 @@ _PATTERNS = [
     (r"([\d,]+)개 항목", r"\1 items"),
     (r"(.+?)  ·  파일 ([\d,]+)개  ·  (.+)", r"\1  ·  \2 files  ·  \3"),
     (r"(.+) 파일이 이미 있습니다\. 덮어쓸까요\?", r"\1 already exists. Overwrite?"),
-    (r"yzip (.+)\(으\)로 업데이트했습니다\.", r"Updated to yzip \1."),
+    (r"MxZip (.+)\(으\)로 업데이트했습니다\.", r"Updated to MxZip \1."),
     (r"새 버전 (.+)", r"New version \1"),
     (r"확인 실패: (.+)", r"Check failed: \1"),
-    (r"다음 yzip 임시 파일/폴더 ([\d,]+)개를 삭제할까요\?", r"Delete these \1 yzip temporary files/folders?"),
+    (r"다음 MxZip 임시 파일/폴더 ([\d,]+)개를 삭제할까요\?", r"Delete these \1 MxZip temporary files/folders?"),
 ]
 _PREFIXES = {"열 수 없습니다: ": "Cannot open: ", "업데이트를 확인하지 못했습니다.\n": "Could not check for updates.\n",
              "파일 연결을 변경하지 못했습니다.\n": "Could not change file associations.\n",
@@ -314,8 +314,8 @@ def translate_text(text: str) -> str:
     if re.match(r"\d+% ", text):
         prefix, rest = text.split("% ", 1)
         return prefix + "% " + translate_text(rest)
-    if text.endswith(" - yzip"):
-        return translate_text(text[:-7]) + " - yzip"
+    if text.endswith(" - MxZip"):
+        return translate_text(text[:-8]) + " - MxZip"
     if "\n\n" in text:
         first, rest = text.split("\n\n", 1)
         if rest in TRANSLATIONS:

@@ -212,7 +212,7 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
         with open(p, "w") as f:
             f.write(f"file {i} " * 300)
         trio.append(p)
-    S = "으로 압축하기 - &yzip"
+    S = "으로 압축하기 - &MxZip"
     cases = [("one file", [files["b.bin"]], "b.zip" + S),
              ("folder", [src], "src.zip" + S),
              ("folder with a dot keeps its full name", [v12], "v1.2.zip" + S),
@@ -226,8 +226,8 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
         check(f"menu label, {name}: '{want}'", code == 0 and len(mine) == 1 and mine[0][0] == want, (code, mine, raw[-300:]))
     check("menu item carries the yzip icon", any(len(it) > 1 and it[1] == "[icon]" for it in yzip_item(probe("list", [files["b.bin"]])[1])))
     dlg_items = [it for it in probe("list", trio)[1] if len(it) > 2 and it[2] == "yzip.compressdlg"]
-    check("second item 'yzip으로 압축하기(&W)...' (opens the compress window)",
-          [it[0] for it in dlg_items] == ["yzip으로 압축하기(&W)..."], dlg_items)
+    check("second item 'MxZip으로 압축하기(&W)...' (opens the compress window)",
+          [it[0] for it in dlg_items] == ["MxZip으로 압축하기(&W)..."], dlg_items)
     code, items, _ = probe("defaultonly", [files["b.bin"]])
     check("CMF_DEFAULTONLY: handler adds nothing", not yzip_item(items), items)
 

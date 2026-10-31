@@ -22,13 +22,13 @@ def write_version_resources(root: pathlib.Path, value: str) -> None:
                     subtype=0x0, date=(0, 0)),
   kids=[
     StringFileInfo([StringTable('040904B0', [
-      StringStruct('CompanyName', 'yzip'),
-      StringStruct('FileDescription', 'yzip archiver'),
+      StringStruct('CompanyName', 'YMX'),
+      StringStruct('FileDescription', 'MxZip archiver'),
       StringStruct('FileVersion', '{value}'),
       StringStruct('InternalName', 'yzip'),
       StringStruct('LegalCopyright', 'Copyright (c) 2026 MrDH1004. MIT License.'),
       StringStruct('OriginalFilename', 'yzip.exe'),
-      StringStruct('ProductName', 'yzip'),
+      StringStruct('ProductName', 'MxZip'),
       StringStruct('ProductVersion', '{value}')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]

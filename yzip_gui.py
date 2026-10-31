@@ -27,7 +27,7 @@ from preferences import PreferencesDialog as SettingsDialog
 from appcore import load_settings, log_exception, log_path, outcome, read_list, save_setting, set_low_priority  # noqa: F401
 from version import __version__
 
-APP = "yzip"
+APP = "MxZip"
 from ui_theme import MAIN_QSS, PROGRESS_QSS, DIALOG_QSS
 
 
@@ -622,7 +622,7 @@ class AssocDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(20, 16, 20, 14)
         lay.setSpacing(10)
-        head = QLabel("더블클릭하면 yzip으로 열 압축 파일 형식을 고르세요.")
+        head = QLabel("더블클릭하면 MxZip으로 열 압축 파일 형식을 고르세요.")
         head.setStyleSheet("font-size: 10.5pt; font-weight: 600; color: #1f2328;")
         lay.addWidget(head)
         self.list = QTreeWidget()
@@ -661,7 +661,7 @@ class AssocDialog(QDialog):
         registered = {e for e in self.assoc.TYPES if self.assoc._get(rf"Software\Classes\{self.assoc.progid(e)}")}
         self.list.clear()
         for ext, (mine, name) in st.items():
-            it = QTreeWidgetItem([ext, "yzip" if mine else name])
+            it = QTreeWidgetItem([ext, "MxZip" if mine else name])
             it.setCheckState(0, Qt.Checked if ext in registered else Qt.Unchecked)
             it.setData(0, Qt.UserRole, ext)
             if mine:
@@ -670,8 +670,8 @@ class AssocDialog(QDialog):
         others = [e for e, (mine, _) in st.items() if e in registered and not mine]
         self.note.setText(
             "Windows에 다른 프로그램이 기본으로 지정된 형식이 있습니다: " + ", ".join(others) +
-            ". 이 형식은 '기본 앱 설정 열기'에서 yzip을 직접 골라야 바뀝니다 (Windows 정책)." if others else
-            "체크한 형식은 '연결 프로그램' 목록에 yzip이 추가되고, 다른 기본 앱이 없으면 yzip으로 열립니다.")
+            ". 이 형식은 '기본 앱 설정 열기'에서 MxZip을 직접 골라야 바뀝니다 (Windows 정책)." if others else
+            "체크한 형식은 '연결 프로그램' 목록에 MxZip이 추가되고, 다른 기본 앱이 없으면 MxZip으로 열립니다.")
 
     def apply(self):
         on = [self.list.topLevelItem(i).data(0, Qt.UserRole) for i in range(self.list.topLevelItemCount())
@@ -796,7 +796,7 @@ class Main(QMainWindow):
         branding = QWidget()
         brand_row = QHBoxLayout(branding)
         brand_row.setContentsMargins(0, 0, 0, 0)
-        brand = QLabel("yzip")
+        brand = QLabel("MxZip")
         brand.setObjectName("brand")
         brand_row.addWidget(brand)
         version = QLabel(__version__)
@@ -907,7 +907,7 @@ class Main(QMainWindow):
         self.formats_btn.clicked.connect(lambda: self.preferences(section="associations"))
         bottom.addWidget(self.formats_btn)
         bottom.addStretch()
-        version = QLabel(f"yzip {__version__}")
+        version = QLabel(f"MxZip {__version__}")
         version.setObjectName("homeVersion")
         bottom.addWidget(version)
         outer.addLayout(bottom)
@@ -1046,7 +1046,7 @@ class Main(QMainWindow):
         self.a_auto_update.setCheckable(True)
         self.a_auto_update.setChecked(bool(load_settings().get("auto_update", True)))
         more.addAction(self.a_auto_update)
-        more.addAction(self._act("yzip 정보", self.about))
+        more.addAction(self._act("MxZip 정보", self.about))
         self.more_btn = QToolButton()
         self.more_btn.setObjectName("more")
         self.more_btn.setText("더 보기")
@@ -1129,13 +1129,13 @@ class Main(QMainWindow):
             log_exception(err)
         if rel is not None:
             self.release = rel
-            self.upd_text.setText(f"새 버전 <b>yzip {rel.version}</b>이(가) 나왔습니다. 지금 버전: {__version__}")
+            self.upd_text.setText(f"새 버전 <b>MxZip {rel.version}</b>이(가) 나왔습니다. 지금 버전: {__version__}")
             self.upd_bar.show()
             if not manual:
                 answer = QMessageBox.question(
                     self,
-                    "yzip 업데이트",
-                    f"새 버전 yzip {rel.version}이 있습니다.\n지금 업데이트하시겠습니까?",
+                    "MxZip 업데이트",
+                    f"새 버전 MxZip {rel.version}이 있습니다.\n지금 업데이트하시겠습니까?",
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.Yes,
                 )
@@ -1145,7 +1145,7 @@ class Main(QMainWindow):
             if err is not None:
                 QMessageBox.warning(self, APP, f"업데이트를 확인하지 못했습니다.\n{err}")
             else:
-                QMessageBox.information(self, APP, f"최신 버전입니다. (yzip {__version__})")
+                QMessageBox.information(self, APP, f"최신 버전입니다. (MxZip {__version__})")
 
     def do_update(self):
         import updater
@@ -1162,7 +1162,7 @@ class Main(QMainWindow):
 
     def about(self):
         from version import REPO, __version__
-        QMessageBox.about(self, "yzip 정보", f"<b>yzip {__version__}</b><br>가볍고 빠른 압축 프로그램<br><br>"
+        QMessageBox.about(self, "MxZip 정보", f"<b>MxZip {__version__}</b><br>가볍고 빠른 압축 프로그램<br><br>"
                                              f"<a href='https://github.com/{REPO}'>github.com/{REPO}</a>")
 
     def associations(self):
@@ -1751,8 +1751,8 @@ class Main(QMainWindow):
 
 
 # ----- Explorer integration (HKCU only, no admin needed) -----
-SHELL_VERBS = [(r"Software\Classes\*\shell\yzip.Compress", "ZIP으로 압축하기 - &yzip", "--archive"),
-               (r"Software\Classes\Directory\shell\yzip.Compress", "ZIP으로 압축하기 - &yzip", "--archive")]
+SHELL_VERBS = [(r"Software\Classes\*\shell\yzip.Compress", "ZIP으로 압축하기 - &MxZip", "--archive"),
+               (r"Software\Classes\Directory\shell\yzip.Compress", "ZIP으로 압축하기 - &MxZip", "--archive")]
 for _ext in formats.READ_EXTS:  # extract verbs for every format yzip reads
     SHELL_VERBS += [(rf"Software\Classes\SystemFileAssociations\{_ext}\shell\yzip.Here", "여기에 압축 풀기", "--extract-here"),
                     (rf"Software\Classes\SystemFileAssociations\{_ext}\shell\yzip.Folder", "폴더에 압축 풀기", "--extract-folder")]
@@ -1897,7 +1897,7 @@ def shell_register():
     if dll_src:
         dll = install_shell_dll(dll_src)
         with winreg.CreateKey(H, rf"Software\Classes\CLSID\{SHELLEX_CLSID}") as k:
-            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "yzip context menu")
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "MxZip context menu")
         with winreg.CreateKey(H, rf"Software\Classes\CLSID\{SHELLEX_CLSID}\InprocServer32") as k:
             winreg.SetValueEx(k, "", 0, winreg.REG_SZ, dll)
             winreg.SetValueEx(k, "ThreadingModel", 0, winreg.REG_SZ, "Apartment")
@@ -2170,7 +2170,7 @@ def main():
         from version import __version__
         win.show()
         win.status.show()
-        win.status.showMessage(f"yzip {__version__}(으)로 업데이트했습니다.", 10000)
+        win.status.showMessage(f"MxZip {__version__}(으)로 업데이트했습니다.", 10000)
         return app.exec()
     if args[:1] in (["--archive-list"], ["--compress-dialog-list"]) and len(args) >= 2:
         # from the shell extension: every selected item in one UTF-8 list file.

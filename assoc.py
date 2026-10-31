@@ -95,7 +95,7 @@ def register(exts=None, exe: str | None = None, icon: str | None = None) -> None
     exe = exe or exe_path()
     icon = icon or (exe + ",0" if exe.lower().endswith(".exe") else exe)
     cmd = open_command(exe)
-    _set(CAP_KEY, "ApplicationName", APP)
+    _set(CAP_KEY, "ApplicationName", "MxZip")  # shown in Default apps
     _set(CAP_KEY, "ApplicationDescription", "가볍고 빠른 압축 프로그램")
     _set(REG_APPS, APP, CAP_KEY)
     for ext in exts:
