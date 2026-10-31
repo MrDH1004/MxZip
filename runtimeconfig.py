@@ -8,19 +8,44 @@ import sys
 import threading
 
 
+class _LazyModule:
+    """Stands in for a module until its first attribute is used, then imports it and hands attributes through.
+    Unlike importlib's LazyLoader it never enters sys.modules, so another module's plain `import bz2` does not
+    count as a use, and creating it costs nothing."""
+    __slots__ = ("_name", "_module")
+
+    def __init__(self, name: str):
+        object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_module", None)
+
+    def _load(self):
+        module = self._module
+        if module is None:
+            import importlib
+            module = importlib.import_module(self._name)
+            object.__setattr__(self, "_module", module)
+        return module
+
+    def __getattr__(self, attr):
+        return getattr(self._load(), attr)
+
+    def __setattr__(self, attr, value):  # tests patch attributes of the real module
+        setattr(self._load(), attr, value)
+
+    def __delattr__(self, attr):
+        delattr(self._load(), attr)
+
+    def __repr__(self):
+        return f"<lazy module {self._name!r}>"
+
+
 def lazy_import(name: str):
-    """The module, executed on first attribute access (importlib's LazyLoader). For modules only some runs
-    need (tarfile, bz2, gzip, hashlib, ...): together ~25 ms of every start of the command line tool."""
+    """The module, imported on first attribute access. For modules only some runs need (tarfile, bz2, gzip,
+    hashlib, ...): together ~25 ms of every start of the command line tool. An already imported module is
+    returned as is."""
     if name in sys.modules:
         return sys.modules[name]
-    import importlib.util
-    spec = importlib.util.find_spec(name)
-    loader = importlib.util.LazyLoader(spec.loader)
-    spec.loader = loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    loader.exec_module(module)
-    return module
+    return _LazyModule(name)
 
 
 shutil = lazy_import("shutil")

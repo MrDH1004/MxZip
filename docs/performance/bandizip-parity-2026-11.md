@@ -6,9 +6,9 @@ checked (extracted tree size equals the source). Ratio = Bandizip time / MxZip t
 
 | | before | after |
 |---|---:|---:|
-| compress (geomean, 12 cases) | 63 % | 106 % |
-| extract (geomean, 12 cases) | 36 % | 70 % |
-| all 24 cases | 48 % | 86 % |
+| compress (geomean, 12 cases) | 63 % | 110 % |
+| extract (geomean, 12 cases) | 36 % | 75 % |
+| all 24 cases | 48 % | 91 % |
 
 Datasets: `benchmark_native.make_datasets` (8 MB text, 8 MB random, 1,500 small files, the repository as a
 mixed project, a 32 MB repetitive file) plus a copy of the built app (~150 MB of DLLs, .pyd, Qt plugins).
@@ -30,11 +30,17 @@ starting a Python process costs ~0.03 s on this machine and importing the engine
 - Thread pool on `threading` alone (`runtimeconfig.ThreadPoolExecutor`): `concurrent.futures` pulled in
   logging/traceback/inspect, 20-50 ms per run. Decoding starts on the calling thread and moves to the pool
   only when the remaining work is estimated above ~5 ms; large ZIP members overlap inflate and disk writes.
-- Start-up: rarely used modules load on first use (`runtimeconfig.lazy_import`), no `typing` / `dataclasses`
-  on the hot path, argparse's colour theme and terminal width resolved only for help output.
+- Start-up: rarely used modules load on first use (`runtimeconfig.lazy_import`, a proxy outside sys.modules),
+  no `typing` / `dataclasses` on the hot path, plain command lines parsed without argparse (argparse still
+  handles help, errors and anything unusual), SetFileTime only once ctypes is loaded or for 256+ files,
+  up to 8 threads committing small 7z members.
 
 ## Not adopted
 
-- Smaller 7z blocks for 2 MB inputs: 2x faster but archives 21 % larger.
+- Smaller 7z blocks (256 KB) for inputs below workers x dictionary: 2 MB project 0.235 -> 0.111 s but the
+  archive 37 % larger (584 KB -> 798 KB; 512 KB blocks: +21 %). Not worth it for an archiver.
+- An own ZIP central-directory reader instead of zipfile: ~7 ms per ZIP run (at most +2 points on extract)
+  against rewriting ZIP64 / name encoding / encryption handling. Overlapping 7z decode and file commits:
+  the cases it helps already beat Bandizip.
 - File preallocation (`truncate`/`SetEndOfFile`): +80 ms for 32 MB on NTFS.
 - Native DLL paths stay opt-in (see `native-results.md`).

@@ -734,7 +734,8 @@ class SevenZArchive(_Base):
         memory_lock = threading.Lock()
 
         made_dirs: set[str] = set()  # folders already created: one makedirs per folder, not per file
-        handle_times = len(targets) >= 32  # SetFileTime needs ctypes (~8 ms to import): only for many files
+        # SetFileTime needs ctypes (~9.5 ms to import, ~0.06 ms saved per file): once loaded, or for very many
+        handle_times = "ctypes" in sys.modules or len(targets) >= 256
         timed: set[str] = set()  # targets whose time was set on the open handle while committing
 
         class Out(Py7zIO):
@@ -902,7 +903,7 @@ class SevenZArchive(_Base):
                     stop.set()
                     raise
 
-            workers = min(4, runtimeconfig.worker_count(), len(groups))
+            workers = min(8, runtimeconfig.worker_count(), len(groups))  # small-file creation scales to ~8
             if workers == 1:
                 for writers in groups.values():
                     commit_group(writers)

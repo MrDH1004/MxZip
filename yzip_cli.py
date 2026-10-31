@@ -2,7 +2,6 @@
 a/c add-create, x extract (full path), e extract flat, t test, l list, d delete, rn rename."""
 from __future__ import annotations
 
-import argparse
 import os
 import re
 import sys
@@ -20,6 +19,7 @@ _SIZE_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(b|k|kb|m|mb|g|gb)?$", re.I)
 def parse_size(s: str) -> int:
     m = _SIZE_RE.match(s.strip())
     if not m:
+        import argparse
         raise argparse.ArgumentTypeError(f"bad size: {s}")
     mult = {None: 1, "b": 1, "k": 1 << 10, "kb": 1 << 10, "m": 1 << 20, "mb": 1 << 20,
             "g": 1 << 30, "gb": 1 << 30}[(m.group(2) or "").lower() or None]
@@ -32,31 +32,32 @@ def _bar(done, total, name):
     sys.stdout.flush()
 
 
-class _LazyThemeFormatter(argparse.HelpFormatter):
-    """Python 3.14's HelpFormatter imports _colorize (~5 ms) as soon as a parser exists. The theme is only
-    needed to print help or an error, so it is resolved then; output is plain (no colour codes)."""
-
-    def __init__(self, prog, indent_increment=2, max_help_position=24, width=None, color=True):
-        if width is None:  # what HelpFormatter asks shutil for; shutil itself costs ~6 ms to import
-            try:
-                width = int(os.environ.get("COLUMNS", 0)) or os.get_terminal_size().columns
-            except (ValueError, OSError):
-                width = 80
-            width -= 2
-        super().__init__(prog, indent_increment, max_help_position, width, color)
-
-    def _set_color(self, color):
-        self._decolor = lambda text: text
-
-    def __getattr__(self, name):
-        if name == "_theme":
-            from _colorize import get_theme
-            self._theme = get_theme(force_no_color=True).argparse
-            return self._theme
-        raise AttributeError(name)
-
-
 def build_parser():
+    import argparse
+
+    class _LazyThemeFormatter(argparse.HelpFormatter):
+        """Python 3.14's HelpFormatter imports _colorize (~5 ms) as soon as a parser exists. The theme is only
+        needed to print help or an error, so it is resolved then; output is plain (no colour codes)."""
+    
+        def __init__(self, prog, indent_increment=2, max_help_position=24, width=None, color=True):
+            if width is None:  # what HelpFormatter asks shutil for; shutil itself costs ~6 ms to import
+                try:
+                    width = int(os.environ.get("COLUMNS", 0)) or os.get_terminal_size().columns
+                except (ValueError, OSError):
+                    width = 80
+                width -= 2
+            super().__init__(prog, indent_increment, max_help_position, width, color)
+    
+        def _set_color(self, color):
+            self._decolor = lambda text: text
+    
+        def __getattr__(self, name):
+            if name == "_theme":
+                from _colorize import get_theme
+                self._theme = get_theme(force_no_color=True).argparse
+                return self._theme
+            raise AttributeError(name)
+
     p = argparse.ArgumentParser(prog="yzip", description="archiver: creates zip/7z/tar.*/gz/bz2/xz/zst, reads all of them",
                                 formatter_class=_LazyThemeFormatter)
     p.add_argument("command", choices=["a", "c", "x", "e", "t", "l", "d", "rn"])
@@ -76,10 +77,64 @@ def build_parser():
     return p
 
 
+class _Args:
+    """What parse_args returns, for the common command lines _quick_args understands."""
+
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+_FLAGS = {"-y": ("y", True), "-aoa": ("ow", "all"), "-aos": ("ow", "skip"), "-aou": ("ow", "rename")}
+_VALUED = {"-fmt": "fmt", "-l": "level", "-p": "password", "-o": "out", "-v": "volume"}
+
+
+def _quick_args(argv):
+    """Parse plain command lines (exact option tokens, values that do not start with '-') without argparse,
+    which with its help formatter costs ~5-10 ms of every start. Anything else -- help, an unknown or joined
+    option, a bad value, two overwrite modes -- returns None and argparse handles it, errors included."""
+    if not argv or argv[0] not in ("a", "c", "x", "e", "t", "l", "d", "rn"):
+        return None
+    a = {"command": argv[0], "fmt": "zip", "level": 5, "password": None, "out": ".", "volume": 0, "y": False,
+         "ow": "all"}
+    positional, ow_given, i = [], 0, 1
+    while i < len(argv):
+        tok = argv[i]
+        if tok in _FLAGS:
+            key, value = _FLAGS[tok]
+            ow_given += key == "ow"
+            a[key] = value
+        elif tok in _VALUED:
+            if i + 1 >= len(argv) or argv[i + 1].startswith("-"):
+                return None
+            value = argv[i + 1]
+            key = _VALUED[tok]
+            try:
+                if key == "fmt" and value not in formats.BY_ID:
+                    return None
+                if key == "level":
+                    value = int(value)
+                    if not 0 <= value <= 9:
+                        return None
+                if key == "volume":
+                    value = parse_size(value)
+            except Exception:
+                return None
+            a[key] = value
+            i += 1
+        elif tok.startswith("-"):
+            return None
+        else:
+            positional.append(tok)
+        i += 1
+    if not positional or ow_given > 1:
+        return None
+    return _Args(archive=positional[0], files=positional[1:], **a)
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     argv = [x for arg in argv for x in (arg.split(":", 1) if arg.startswith("-fmt:") else [arg])]  # bz.exe style
-    a = build_parser().parse_args(argv)
+    a = _quick_args(argv) or build_parser().parse_args(argv)
     cmd = a.command
     try:
         if cmd in ("a", "c"):

@@ -7,6 +7,7 @@ warnings = runtimeconfig.lazy_import("warnings")  # only for rare warnings
 zipfile = runtimeconfig.lazy_import("zipfile")  # ~12 ms; 7z/tar runs never touch it
 import re
 import struct
+import sys
 import threading
 import time
 import zlib
@@ -623,7 +624,8 @@ class Archive:
 
         # Setting the time on the open handle (SetFileTime through ctypes) saves an open per file but importing
         # ctypes costs ~8 ms: worth it from a few dozen files on
-        handle_times = len(jobs) >= 32
+        # (ctypes ~9.5 ms to import vs ~0.06 ms saved per file: use it once loaded, or for very many files)
+        handle_times = "ctypes" in sys.modules or len(jobs) >= 256
 
         def one(job):
             _index, n, info, target, target_existed = job
