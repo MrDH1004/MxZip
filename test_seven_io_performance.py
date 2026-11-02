@@ -19,7 +19,7 @@ import ziplib
 class NativeImportBoundaryTests(unittest.TestCase):
     def run_isolated(self, script):
         env = dict(os.environ)
-        for name in ("YZIP_NATIVE_7Z_EXTRACT", "YZIP_NATIVE_ZIP_EXTRACT", "YZIP_NATIVE_ZIP_CREATE"):
+        for name in ("MXZIP_NATIVE_7Z_EXTRACT", "MXZIP_NATIVE_ZIP_EXTRACT", "MXZIP_NATIVE_ZIP_CREATE"):
             env.pop(name, None)
         return subprocess.run(
             [sys.executable, "-c", script],
@@ -48,7 +48,7 @@ class NativeImportBoundaryTests(unittest.TestCase):
 
 class SevenIOTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="yzip-seven-io-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="MxZip-seven-io-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.dest = self.root / "out"

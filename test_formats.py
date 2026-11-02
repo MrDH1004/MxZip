@@ -11,7 +11,7 @@ import formats
 import lzmamt
 import ziplib
 
-BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
+BZ = os.environ.get("MXZIP_REF_ARCHIVER", "")
 
 
 def sha(b):
@@ -198,7 +198,7 @@ class FormatTests(unittest.TestCase):
         if not os.path.exists(BZ):
             self.skipTest("the third-party archiver not installed")
         for fid in ("7z", "tar", "tgz", "tbz", "txz"):
-            with self.subTest(made_by="yzip", fmt=fid):
+            with self.subTest(made_by="MxZip", fmt=fid):
                 out = self.roundtrip(fid)
                 dest = os.path.join(self.root, "bz_" + fid)
                 subprocess.run([BZ, "x", "-y", f"-o:{dest}", out], capture_output=True, timeout=120)
@@ -383,7 +383,7 @@ class SafetyTests(unittest.TestCase):
     def test_7z_duplicate_names_both_kept(self):
         import py7zr
         arc = os.path.join(self.root, "d.7z")
-        # plain LZMA2 (the layout 7-Zip/third-party archivers/yzip write) goes through yzip's own reader; py7zr's default adds
+        # plain LZMA2 (the layout 7-Zip/third-party archivers/MxZip write) goes through MxZip's own reader; py7zr's default adds
         # BCJ, falls back to py7zr, and py7zr itself hands a repeated name out only once
         with py7zr.SevenZipFile(arc, "w", filters=[{"id": py7zr.FILTER_LZMA2}]) as z:
             z.writestr(b"FIRST", "x.txt")

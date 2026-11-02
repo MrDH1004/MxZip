@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SignPath artifact configuration "app": the PyInstaller folder as uploaded by GitHub Actions (a zip).
-     Only yzip's own binaries are signed; bundled upstream libraries (Python, Qt, ...) stay as published.
-     Product name/version are enforced so a signature can only land on a yzip build. -->
+     Only MxZip's own binaries are signed; bundled upstream libraries (Python, Qt, ...) stay as published.
+     Product name/version are enforced so a signature can only land on a MxZip build. -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <zip-file>
-    <pe-file path="yzip.exe" product-name="yzip">
+    <pe-file path="MxZip.exe" product-name="MxZip">
       <authenticode-sign />
     </pe-file>
-    <pe-file path="_internal/yzipshell.dll" product-name="yzip">
+    <pe-file path="_internal/mxzipshell.dll" product-name="MxZip">
       <authenticode-sign />
     </pe-file>
   </zip-file>

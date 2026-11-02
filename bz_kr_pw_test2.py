@@ -4,7 +4,7 @@ import tempfile
 
 import pyzipper
 
-BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
+BZ = os.environ.get("MXZIP_REF_ARCHIVER", "")
 PW = "p@ss한글"
 with tempfile.TemporaryDirectory() as t:
     for enc in ("utf-8", "cp949", "utf-16-le"):

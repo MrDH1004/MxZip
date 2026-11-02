@@ -1,6 +1,6 @@
 """Render synthetic Qt widgets offscreen, never the user's desktop.
 
-Usage: python render_ui_review.py --output C:/Temp/yzip-ui-review
+Usage: python render_ui_review.py --output C:/Temp/MxZip-ui-review
 All settings and sample archives are temporary; no network/update check is run.
 """
 import argparse
@@ -12,7 +12,7 @@ import zipfile
 
 # Must be set before importing Qt. Do not allow the caller's desktop backend.
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-os.environ["YZIP_NO_OPEN"] = "1"
+os.environ["MXZIP_NO_OPEN"] = "1"
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontDatabase
@@ -21,7 +21,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QLabel
 
 import appcore
 import appearance
-import yzip_gui as gui
+import mxzip_gui as gui
 from ui_theme import PREFERENCES_QSS
 
 
@@ -53,10 +53,10 @@ def render(output):
         report.append({"file": path.name, "width": widget.width(), "height": widget.height(),
                        "minimum_width": widget.minimumWidth()})
 
-    with tempfile.TemporaryDirectory(prefix="yzip-render-") as temp:
+    with tempfile.TemporaryDirectory(prefix="MxZip-render-") as temp:
         root = Path(temp)
-        old_settings = os.environ.get("YZIP_SETTINGS")
-        os.environ["YZIP_SETTINGS"] = str(root / "settings.json")
+        old_settings = os.environ.get("MXZIP_SETTINGS")
+        os.environ["MXZIP_SETTINGS"] = str(root / "settings.json")
         try:
             archive = root / "Project files.zip"
             source = root / "notes.txt"
@@ -128,14 +128,14 @@ def render(output):
                         app.processEvents()
         finally:
             if old_settings is None:
-                os.environ.pop("YZIP_SETTINGS", None)
+                os.environ.pop("MXZIP_SETTINGS", None)
             else:
-                os.environ["YZIP_SETTINGS"] = old_settings
+                os.environ["MXZIP_SETTINGS"] = old_settings
     (output / "manifest.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     # A local review page is convenient for side-by-side inspection.
     cards = "".join(f'<figure><figcaption>{r["file"]} ({r["width"]}×{r["height"]})</figcaption>'
                     f'<img src="{r["file"]}" loading="lazy"></figure>' for r in report)
-    (output / "index.html").write_text('<!doctype html><meta charset="utf-8"><title>yzip UI review</title>'
+    (output / "index.html").write_text('<!doctype html><meta charset="utf-8"><title>MxZip UI review</title>'
         '<style>body{font:14px Segoe UI;background:#dce3e6;margin:24px}figure{display:inline-block;'
         'vertical-align:top;margin:12px}img{max-width:640px;display:block;margin-top:8px}</style>' + cards,
         encoding="utf-8")
@@ -144,5 +144,5 @@ def render(output):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", default=str(Path(tempfile.gettempdir()) / "yzip-ui-review-20261028"))
+    parser.add_argument("--output", default=str(Path(tempfile.gettempdir()) / "MxZip-ui-review-20261028"))
     render(parser.parse_args().output)

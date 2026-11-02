@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton
 
 import appcore
 import appearance
-import yzip_gui as gui
+import mxzip_gui as gui
 
 
 class RenewalTests(unittest.TestCase):
@@ -29,10 +29,10 @@ class RenewalTests(unittest.TestCase):
                     QFontDatabase.addApplicationFont(str(path))
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="yzip-ui-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="MxZip-ui-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        env = mock.patch.dict(os.environ, {"YZIP_SETTINGS": str(self.root / "settings.json"), "YZIP_NO_OPEN": "1"})
+        env = mock.patch.dict(os.environ, {"MXZIP_SETTINGS": str(self.root / "settings.json"), "MXZIP_NO_OPEN": "1"})
         env.start()
         self.addCleanup(env.stop)
         appcore.save_settings({"theme": "light", "language": "ko", "font_size": 10})

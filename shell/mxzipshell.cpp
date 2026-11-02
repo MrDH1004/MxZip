@@ -1,16 +1,16 @@
-// yzip Explorer context-menu handler. When every selected item is an archive (an extension listed in
-// HKCU\Software\yzip\ArchiveExts), first the extract items, so they sit in the menu's extract section next to
+// MxZip Explorer context-menu handler. When every selected item is an archive (an extension listed in
+// HKCU\Software\MxZip\ArchiveExts), first the extract items, so they sit in the menu's extract section next to
 // Windows' and the third-party archiver's instead of the static-verb group at the top:
 //   2 "여기에 압축 풀기": <Command> --extract-list here <list>
 //   3 "폴더에 압축 풀기": <Command> --extract-list folder <list>
 // otherwise (not all archives) the compress items:
-//   0 "<name>.zip으로 압축하기 - yzip": compresses at once. The handler decides the output path (same "(2)" rule
-//     as yzip's unique_path) so the label and the file always agree: <Command> --archive-list <list> --out <zip>
-//   4 "각각 ZIP 파일로 압축하기 - yzip" (several items, "파일별로 처리" setting): one ZIP per item, named by
-//     yzip: <Command> --archive-list <list> --out <zip> --each
-//   1 "yzip으로 압축하기(W)...": opens yzip's compress window (format, password, ...):
+//   0 "<name>.zip으로 압축하기 - MxZip": compresses at once. The handler decides the output path (same "(2)" rule
+//     as MxZip's unique_path) so the label and the file always agree: <Command> --archive-list <list> --out <zip>
+//   4 "각각 ZIP 파일로 압축하기 - MxZip" (several items, "파일별로 처리" setting): one ZIP per item, named by
+//     MxZip: <Command> --archive-list <list> --out <zip> --each
+//   1 "MxZip으로 압축하기(W)...": opens MxZip's compress window (format, password, ...):
 //     <Command> --compress-dialog-list <list>
-// The selection goes in a UTF-8 list file. <Command> comes from HKCU\Software\yzip\Command (--register-shell).
+// The selection goes in a UTF-8 list file. <Command> comes from HKCU\Software\MxZip\Command (--register-shell).
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -20,13 +20,13 @@
 #include <string>
 #include <vector>
 
-// {7E3B1C52-9A4D-4F1E-B6C2-3D8A5F0E9C71}
-static const CLSID CLSID_YzipMenu = {0x7e3b1c52, 0x9a4d, 0x4f1e, {0xb6, 0xc2, 0x3d, 0x8a, 0x5f, 0x0e, 0x9c, 0x71}};
+// {E856C547-DF4F-438A-9357-3225756E4D24}
+static const CLSID CLSID_MxZipMenu = {0xe856c547, 0xdf4f, 0x438a, {0x93, 0x57, 0x32, 0x25, 0x75, 0x6e, 0x4d, 0x24}};
 enum { CMD_COMPRESS, CMD_DIALOG, CMD_HERE, CMD_FOLDER, CMD_EACH, N_CMDS };
-static const wchar_t* const VERBS_W[] = {L"yzip.compress", L"yzip.compressdlg", L"yzip.extracthere", L"yzip.extractfolder",
-                                         L"yzip.compresseach"};
-static const char* const VERBS_A[] = {"yzip.compress", "yzip.compressdlg", "yzip.extracthere", "yzip.extractfolder",
-                                      "yzip.compresseach"};
+static const wchar_t* const VERBS_W[] = {L"MxZip.compress", L"MxZip.compressdlg", L"MxZip.extracthere", L"MxZip.extractfolder",
+                                         L"MxZip.compresseach"};
+static const char* const VERBS_A[] = {"MxZip.compress", "MxZip.compressdlg", "MxZip.extracthere", "MxZip.extractfolder",
+                                      "MxZip.compresseach"};
 
 static HINSTANCE g_inst;
 static long g_refs;
@@ -56,7 +56,7 @@ static std::wstring strip_ext(const std::wstring& p) {
     return p.substr(0, dot);
 }
 
-// Same naming as yzip: one file -> name without extension, one folder -> folder name,
+// Same naming as MxZip: one file -> name without extension, one folder -> folder name,
 // several items -> name of the folder they are in; then "name (2).zip" if taken.
 static std::wstring output_path(const std::vector<std::wstring>& paths) {
     std::wstring base;
@@ -94,14 +94,14 @@ static std::wstring menu_label(const std::wstring& out) {
 static std::wstring read_command() {
     wchar_t buf[2048];
     DWORD cb = sizeof(buf);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\yzip", L"Command", RRF_RT_REG_SZ, nullptr, buf, &cb) != ERROR_SUCCESS)
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\MxZip", L"Command", RRF_RT_REG_SZ, nullptr, buf, &cb) != ERROR_SUCCESS)
         return L"";
     return buf;
 }
 
 static DWORD menu_mask() {
     DWORD value = 7, cb = sizeof(value);
-    LSTATUS result = RegGetValueW(HKEY_CURRENT_USER, L"Software\\yzip", L"MenuMask",
+    LSTATUS result = RegGetValueW(HKEY_CURRENT_USER, L"Software\\MxZip", L"MenuMask",
                                  RRF_RT_REG_DWORD, nullptr, &value, &cb);
     return result == ERROR_SUCCESS ? value : 7;
 }
@@ -109,30 +109,30 @@ static DWORD menu_mask() {
 static bool english_menu() {
     wchar_t value[8] = {};
     DWORD cb = sizeof(value);
-    return RegGetValueW(HKEY_CURRENT_USER, L"Software\\yzip", L"Language", RRF_RT_REG_SZ,
+    return RegGetValueW(HKEY_CURRENT_USER, L"Software\\MxZip", L"Language", RRF_RT_REG_SZ,
                         nullptr, value, &cb) == ERROR_SUCCESS && lstrcmpW(value, L"en") == 0;
 }
 
 static bool separate_archives() {
     DWORD value = 0, cb = sizeof(value);
-    return RegGetValueW(HKEY_CURRENT_USER, L"Software\\yzip", L"SeparateArchives", RRF_RT_REG_DWORD,
+    return RegGetValueW(HKEY_CURRENT_USER, L"Software\\MxZip", L"SeparateArchives", RRF_RT_REG_DWORD,
                         nullptr, &value, &cb) == ERROR_SUCCESS && value != 0;
 }
 
 static std::wstring icon_source() {
     wchar_t buf[2048];
     DWORD cb = sizeof(buf);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\yzip", L"Icon", RRF_RT_REG_SZ, nullptr, buf, &cb) != ERROR_SUCCESS)
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\MxZip", L"Icon", RRF_RT_REG_SZ, nullptr, buf, &cb) != ERROR_SUCCESS)
         return L"";
     return buf;
 }
 
 // ";.zip;.7z;...;" (lowercase) from --register-shell: ArchiveExts (archives proper) or ImageExts (disk images,
-// installers: yzip extracts them, but they are not "just an archive", so compressing stays offered)
+// installers: MxZip extracts them, but they are not "just an archive", so compressing stays offered)
 static std::wstring ext_list(const wchar_t* value) {
     wchar_t buf[2048];
     DWORD cb = sizeof(buf);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\yzip", value, RRF_RT_REG_SZ, nullptr, buf, &cb) != ERROR_SUCCESS)
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\MxZip", value, RRF_RT_REG_SZ, nullptr, buf, &cb) != ERROR_SUCCESS)
         return L"";
     std::wstring s = L";" + std::wstring(buf) + L";";
     CharLowerBuffW(&s[0], (DWORD)s.size());
@@ -180,7 +180,7 @@ static std::wstring escape_amp(const std::wstring& s) {
     return esc;
 }
 
-// 0: not something yzip extracts, 1: an archive, 2: a disk image / installer yzip can extract
+// 0: not something MxZip extracts, 1: an archive, 2: a disk image / installer MxZip can extract
 static int extract_kind(const std::wstring& p, const std::wstring& archives, const std::wstring& images) {
     std::wstring name = file_name(p);
     size_t dot = name.find_last_of(L'.');
@@ -232,7 +232,7 @@ static bool write_utf8(const std::wstring& path, const std::wstring& text) {
     return ok && w == s.size();
 }
 
-class YzipMenu : public IShellExtInit, public IContextMenu {
+class MxZipMenu : public IShellExtInit, public IContextMenu {
     long refs_ = 1;
     std::vector<std::wstring> paths_;
     std::wstring out_;
@@ -241,15 +241,15 @@ class YzipMenu : public IShellExtInit, public IContextMenu {
     HBITMAP bmp_ = nullptr;
 
 public:
-    YzipMenu() { InterlockedIncrement(&g_refs); }
-    ~YzipMenu() {
+    MxZipMenu() { InterlockedIncrement(&g_refs); }
+    ~MxZipMenu() {
         if (bmp_)
             DeleteObject(bmp_);
         InterlockedDecrement(&g_refs);
     }
 
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) {
-        static const QITAB qit[] = {QITABENT(YzipMenu, IShellExtInit), QITABENT(YzipMenu, IContextMenu), {0}};
+        static const QITAB qit[] = {QITABENT(MxZipMenu, IShellExtInit), QITABENT(MxZipMenu, IContextMenu), {0}};
         return QISearch(this, qit, riid, ppv);
     }
     IFACEMETHODIMP_(ULONG) AddRef() { return InterlockedIncrement(&refs_); }
@@ -383,7 +383,7 @@ public:
         wchar_t tmp[MAX_PATH];
         GetTempPathW(MAX_PATH, tmp);
         wchar_t list[MAX_PATH];
-        StringCchPrintfW(list, MAX_PATH, L"%syzip_sel_%lu_%llu.txt", tmp, GetCurrentProcessId(), GetTickCount64());
+        StringCchPrintfW(list, MAX_PATH, L"%smxzip_sel_%lu_%llu.txt", tmp, GetCurrentProcessId(), GetTickCount64());
         std::wstring text;
         for (auto& p : paths_)
             text += p + L"\n";
@@ -454,7 +454,7 @@ public:
         *ppv = nullptr;
         if (outer)
             return CLASS_E_NOAGGREGATION;
-        YzipMenu* m = new (std::nothrow) YzipMenu();
+        MxZipMenu* m = new (std::nothrow) MxZipMenu();
         if (!m)
             return E_OUTOFMEMORY;
         HRESULT hr = m->QueryInterface(riid, ppv);
@@ -477,7 +477,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {
 
 STDAPI DllGetClassObject(REFCLSID clsid, REFIID riid, void** ppv) {
     *ppv = nullptr;
-    if (!IsEqualCLSID(clsid, CLSID_YzipMenu))
+    if (!IsEqualCLSID(clsid, CLSID_MxZipMenu))
         return CLASS_E_CLASSNOTAVAILABLE;
     Factory* f = new (std::nothrow) Factory();
     if (!f)

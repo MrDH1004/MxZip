@@ -1,10 +1,10 @@
 """Archive file associations, per user (HKCU, no admin).
 
-Registers a ProgID per extension (yzip.zip, yzip.7z, ...), lists yzip under each extension's "Open with", and
-publishes Capabilities + RegisteredApplications so Settings > Default apps knows yzip. Windows 10/11 keep the
+Registers a ProgID per extension (MxZip.zip, MxZip.7z, ...), lists MxZip under each extension's "Open with", and
+publishes Capabilities + RegisteredApplications so Settings > Default apps knows MxZip. Windows 10/11 keep the
 user's own choice (UserChoice, hash-protected) out of reach of programs: where one exists, only the user can
 switch it in Settings, so status() reads the handler Windows really uses (AssocQueryString) instead of
-trusting what was written. Where no choice exists, the extension's default is pointed at yzip; the value it
+trusting what was written. Where no choice exists, the extension's default is pointed at MxZip; the value it
 had is kept and put back by unregister()."""
 from __future__ import annotations
 
@@ -16,9 +16,10 @@ from ctypes import wintypes
 
 from formats import SUPPORTED_TYPES
 
-APP = "yzip"
-CAP_KEY = r"Software\yzipAssoc\Capabilities"
+APP = "MxZip"
+CAP_KEY = r"Software\MxZipAssoc\Capabilities"
 REG_APPS = r"Software\RegisteredApplications"
+LEGACY_APP = "yzip"  # the app's former name: ProgIDs yzip.zip, ..., Software\yzipAssoc
 H = winreg.HKEY_CURRENT_USER
 
 # extension -> type name shown by Explorer
@@ -95,6 +96,7 @@ def register(exts=None, exe: str | None = None, icon: str | None = None) -> None
     exe = exe or exe_path()
     icon = icon or (exe + ",0" if exe.lower().endswith(".exe") else exe)
     cmd = open_command(exe)
+    remove_legacy()
     _set(CAP_KEY, "ApplicationName", "MxZip")  # shown in Default apps
     _set(CAP_KEY, "ApplicationDescription", "가볍고 빠른 압축 프로그램")
     _set(REG_APPS, APP, CAP_KEY)
@@ -115,13 +117,10 @@ def register(exts=None, exe: str | None = None, icon: str | None = None) -> None
     notify()
 
 
-def unregister(exts=None) -> None:
-    all_types = exts is None
-    exts = _extensions(exts)
-    if not exts:
-        return
+def _drop_progids(app: str, exts) -> None:
+    """Remove app's ProgID of each extension, giving the extension back its previous default."""
     for ext in exts:
-        pid = progid(ext)
+        pid = app + ext
         base = rf"Software\Classes\{pid}"
         cls = rf"Software\Classes\{ext}"
         if _get(cls) == pid:
@@ -132,15 +131,32 @@ def unregister(exts=None) -> None:
                 _del_value(cls, "")
         _del_value(cls + r"\OpenWithProgids", pid)
         _del_tree(base)
+
+
+def remove_legacy() -> None:
+    """Associations written under the former name yzip (an install before the rename to MxZip)."""
+    _drop_progids(LEGACY_APP, TYPES)
+    _del_tree(rf"Software\{LEGACY_APP}Assoc")
+    _del_value(REG_APPS, LEGACY_APP)
+
+
+def unregister(exts=None) -> None:
+    all_types = exts is None
+    exts = _extensions(exts)
+    if not exts:
+        return
+    _drop_progids(APP, exts)
+    for ext in exts:
         _del_value(CAP_KEY + r"\FileAssociations", ext)
     if all_types:
-        _del_tree(r"Software\yzipAssoc")
+        remove_legacy()
+        _del_tree(CAP_KEY.rsplit("\\", 1)[0])  # Software\MxZipAssoc
         _del_value(REG_APPS, APP)
     notify()
 
 
 def enabled(exts=None) -> bool:
-    """Whether yzip's per-user ProgID is registered for every requested extension."""
+    """Whether MxZip's per-user ProgID is registered for every requested extension."""
     return all(_get(rf"Software\Classes\{progid(ext)}") is not None for ext in _extensions(exts))
 
 
@@ -156,7 +172,7 @@ def effective(ext: str) -> tuple[str, str]:
 
 
 def status(exts=None, exe: str | None = None) -> dict:
-    """ext -> (is_yzip, app name) as Windows resolves it now."""
+    """ext -> (is_mxzip, app name) as Windows resolves it now."""
     exe = os.path.normcase(os.path.abspath(exe or exe_path()))
     res = {}
     for ext in _extensions(exts):
@@ -166,5 +182,5 @@ def status(exts=None, exe: str | None = None) -> dict:
 
 
 def open_default_apps():
-    """Settings > Default apps, on yzip's page where Windows supports it."""
+    """Settings > Default apps, on MxZip's page where Windows supports it."""
     os.startfile(f"ms-settings:defaultapps?registeredAppUser={APP}")

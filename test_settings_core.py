@@ -28,7 +28,7 @@ class SettingsCoreTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.settings = self.root / "settings.json"
-        self.env = patch.dict(os.environ, YZIP_SETTINGS=str(self.settings))
+        self.env = patch.dict(os.environ, MXZIP_SETTINGS=str(self.settings))
         self.env.start()
 
     def tearDown(self):
@@ -80,7 +80,7 @@ class SettingsCoreTests(unittest.TestCase):
         with patch("appcore.os.replace", side_effect=OSError("denied")), self.assertRaises(OSError):
             appcore.save_settings({"theme": "light"})
         self.assertEqual(self.settings.read_bytes(), original)
-        self.assertEqual(list(self.root.glob(".yzip-settings-*")), [])
+        self.assertEqual(list(self.root.glob(".MxZip-settings-*")), [])
 
     def test_relative_path_and_concurrent_updates(self):
         with patch("appcore.settings_path", return_value=str(self.settings)):
@@ -111,7 +111,7 @@ class SettingsCoreTests(unittest.TestCase):
     def test_runtime_initialization_and_failed_reconfigure(self):
         self.configure(worker_threads=1)
         session = Path(tempfile.gettempdir())
-        self.assertEqual(session.parent, self.root.resolve() / "yzip-temp")
+        self.assertEqual(session.parent, self.root.resolve() / "MxZip-temp")
         with tempfile.NamedTemporaryFile() as file:
             self.assertEqual(Path(file.name).parent, session)
         bad = self.root / "file"
@@ -130,7 +130,7 @@ class SettingsCoreTests(unittest.TestCase):
             priority.assert_not_called()
         self.assertEqual(values["worker_threads"], 2)
         self.assertEqual((tempfile.tempdir, runtimeconfig._threads, runtimeconfig._sessions), before)
-        self.assertEqual(list((custom / "yzip-temp").iterdir()), [])
+        self.assertEqual(list((custom / "MxZip-temp").iterdir()), [])
         bad = self.root / "not-directory"
         bad.write_bytes(b"file")
         with self.assertRaises(OSError):
@@ -162,7 +162,7 @@ class SettingsCoreTests(unittest.TestCase):
         root = active.parent
         unknown = root / ("session-" + "a" * 32)
         unknown.mkdir()
-        (unknown / ".yzip-owner").write_bytes(b"not ours")
+        (unknown / ".MxZip-owner").write_bytes(b"not ours")
         script = "import runtimeconfig,sys; print(runtimeconfig.configure(temp_dir=sys.argv[1]),flush=True)"
         result = subprocess.run([sys.executable, "-c", script, str(self.root)], capture_output=True,
                                 text=True, encoding="utf-8", check=True)
@@ -199,7 +199,7 @@ class SettingsCoreTests(unittest.TestCase):
         root = Path(tempfile.gettempdir()).parent
         stale = root / ("session-" + "b" * 32)
         stale.mkdir()
-        marker = stale / ".yzip-owner"
+        marker = stale / ".MxZip-owner"
         marker.write_bytes(runtimeconfig._MARKER)
         candidates = appcore.cleanup_temp(dry_run=True)
         self.assertEqual(candidates, [str(stale)])
@@ -215,7 +215,7 @@ class SettingsCoreTests(unittest.TestCase):
         self.assertTrue(stale.exists())
 
     def test_main_applies_defaults_and_keeps_dialog_action(self):
-        import yzip_main
+        import mxzip_main
         src = self.source()
         listing = self.root / "list.txt"
         listing.write_text(src + "\n", encoding="utf-8")
@@ -224,18 +224,18 @@ class SettingsCoreTests(unittest.TestCase):
         attached = []
         fake = types.SimpleNamespace(attach_job=lambda job: attached.append(job), finish=lambda code: None,
                                      main=lambda: 0)
-        with patch.dict(sys.modules, yzip_gui=fake), patch.object(sys, "argv", [
-                "yzip", "--archive-list", str(listing), "--out", str(self.root / "memo.zip")]):
-            self.assertEqual(yzip_main.main(), 0)
+        with patch.dict(sys.modules, mxzip_gui=fake), patch.object(sys, "argv", [
+                "MxZip", "--archive-list", str(listing), "--out", str(self.root / "memo.zip")]):
+            self.assertEqual(mxzip_main.main(), 0)
         self.assertEqual(len(attached), 1)
         self.assertTrue(attached[0].wait(10))
         self.assertTrue(attached[0].ok, attached[0].result)
         self.assertTrue(zipfile.is_zipfile(self.root / "output" / "memo.zip"))
         self.assertFalse((self.root / "output" / "memo.tar.gz").exists())
         listing.write_text(src + "\n", encoding="utf-8")
-        with patch.dict(sys.modules, yzip_gui=fake), patch.object(sys, "argv", [
-                "yzip", "--compress-dialog-list", str(listing)]):
-            self.assertEqual(yzip_main.main(), 0)
+        with patch.dict(sys.modules, mxzip_gui=fake), patch.object(sys, "argv", [
+                "MxZip", "--compress-dialog-list", str(listing)]):
+            self.assertEqual(mxzip_main.main(), 0)
         self.assertTrue(listing.exists())
         self.assertEqual(len(attached), 1)
 
@@ -261,6 +261,29 @@ class SettingsCoreTests(unittest.TestCase):
             # one worker: the member is extracted on this thread without a pool; never more than the limit
             self.assertTrue(not pool.called or pool.call_args.args[0] == 1)
         self.assertEqual((self.root / "extract" / "memo.txt").read_bytes(), Path(src).read_bytes())
+
+    def test_settings_of_the_former_name_yzip_carry_over_once(self):
+        local = self.root / "local"
+        (local / "yzip").mkdir(parents=True)
+        (local / "yzip" / "settings.json").write_text(json.dumps({"compress_level": 3}), encoding="utf-8")
+        env = dict(os.environ, LOCALAPPDATA=str(local))
+        env.pop("MXZIP_SETTINGS")
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(appcore.settings_path(), str(local / "MxZip" / "settings.json"))
+            self.assertEqual(appcore.load_settings()["compress_level"], 3)
+            appcore.save_settings({"compress_level": 5})
+            # only the first time MxZip has no settings: later yzip files never overwrite them
+            (local / "yzip" / "settings.json").write_text(json.dumps({"compress_level": 1}), encoding="utf-8")
+            self.assertEqual(appcore.load_settings()["compress_level"], 5)
+        self.assertTrue((local / "yzip" / "settings.json").is_file())
+
+    def test_fresh_install_without_yzip_settings_uses_defaults(self):
+        local = self.root / "fresh"
+        env = dict(os.environ, LOCALAPPDATA=str(local))
+        env.pop("MXZIP_SETTINGS")
+        with patch.dict(os.environ, env, clear=True):
+            self.assertEqual(appcore.load_settings(), appcore.normalize_settings())
+        self.assertFalse((local / "MxZip" / "settings.json").exists())
 
     def test_quick_defaults_and_separate_outputs(self):
         one = self.source("same.txt")
@@ -332,11 +355,11 @@ class SettingsCoreTests(unittest.TestCase):
         with patch("assoc._set") as write, patch("assoc._get", return_value=None), patch("assoc.notify"):
             assoc.register([".xz"], exe="test.exe")
             paths = [call.args[0] for call in write.call_args_list]
-            self.assertTrue(any("yzip.xz" in path for path in paths))
-            self.assertFalse(any("yzip.zip" in path for path in paths))
+            self.assertTrue(any("MxZip.xz" in path for path in paths))
+            self.assertFalse(any("MxZip.zip" in path for path in paths))
         with patch("assoc._del_tree") as delete, patch("assoc._get", return_value=None), patch("assoc._del_value"), patch("assoc.notify"):
             assoc.unregister([".xz"])
-            delete.assert_called_once_with(r"Software\Classes\yzip.xz")
+            delete.assert_called_once_with(r"Software\Classes\MxZip.xz")
 
 
 if __name__ == "__main__":

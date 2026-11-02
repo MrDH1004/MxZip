@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 import appcore
 import appearance
 from preferences import PreferencesDialog
-import yzip_gui as gui
+import mxzip_gui as gui
 
 
 class SettingsFlows(unittest.TestCase):
@@ -28,16 +28,16 @@ class SettingsFlows(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="yzip-settings-flows-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="MxZip-settings-flows-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(os.path.realpath(self.tmp.name))
         env = mock.patch.dict(os.environ, {
-            "YZIP_SETTINGS": str(self.root / "settings.json"),
-            "LOCALAPPDATA": str(self.root / "local"), "YZIP_NO_OPEN": "1",
+            "MXZIP_SETTINGS": str(self.root / "settings.json"),
+            "LOCALAPPDATA": str(self.root / "local"), "MXZIP_NO_OPEN": "1",
         })
         env.start()
         self.addCleanup(env.stop)
-        for target in ("yzip_gui.shell_register", "yzip_gui.shell_unregister", "assoc.register", "assoc.unregister",
+        for target in ("mxzip_gui.shell_register", "mxzip_gui.shell_unregister", "assoc.register", "assoc.unregister",
                        "PySide6.QtWidgets.QMessageBox.critical", "PySide6.QtWidgets.QMessageBox.warning"):
             patcher = mock.patch(target)
             patcher.start()

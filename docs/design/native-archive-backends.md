@@ -8,8 +8,8 @@ Remove child-process execution for non-ZIP/7z archive handling while keeping the
 
 - RAR/RAR5: list, extract, and integrity test for unencrypted archives through libarchive's in-process C API. Encrypted RAR is detected and rejected without writing because libarchive's RAR reader does not implement RAR decryption; creation remains unsupported because the upstream RAR reader is read-only and RAR creation has format/licensing constraints.
 - ISO9660/UDF/CAB and other libarchive-readable inputs: list, extract, and test through the same in-process API. Creation is only exposed where the existing UI already has a format writer.
-- EGG: list, extract, and test through the MIT-licensed `unegg` Rust library compiled into a native yzip module; no `unegg.exe` process.
-- ALZ: list, extract, and test through the MIT-licensed `unalz` Rust library compiled into the same native yzip module; no `unalz.exe` process.
+- EGG: list, extract, and test through the MIT-licensed `unegg` Rust library compiled into a native MxZip module; no `unegg.exe` process.
+- ALZ: list, extract, and test through the MIT-licensed `unalz` Rust library compiled into the same native MxZip module; no `unalz.exe` process.
 - Existing ZIP/7z/TAR/stream paths remain unchanged unless a regression test requires a shared safety helper.
 
 ## Non-goals

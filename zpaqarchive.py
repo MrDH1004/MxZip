@@ -116,7 +116,7 @@ class ZpaqArchive:
         wanted = None if names is None else {name.replace("\\", "/") for name in names}
         chosen = [entry for entry in self._entries if self._selected(entry.name, wanted)]
         total = sum(entry.size for entry in chosen if not entry.is_dir)
-        stage = tempfile.mkdtemp(prefix="~yzip", suffix=".stage", dir=plan.root)
+        stage = tempfile.mkdtemp(prefix="~MxZip", suffix=".stage", dir=plan.root)
         try:
             try:
                 import ctypes

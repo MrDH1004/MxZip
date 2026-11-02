@@ -1,4 +1,4 @@
-"""Performance check of yzip against a third-party archiver (its CLI) and Windows tar on identical generated data.
+"""Performance check of MxZip against a third-party archiver (its CLI) and Windows tar on identical generated data.
 
 Measures wall time, CPU time, peak memory (of the tool's own process), archive size; every archive is
 cross-checked by extracting it with a DIFFERENT tool and comparing SHA-256 of every file with the source.
@@ -19,9 +19,9 @@ import ctypes
 from ctypes import wintypes
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
-CLI = [sys.executable, "-W", "ignore", os.path.join(HERE, "yzip_cli.py")]
-EXE = os.path.join(HERE, "dist", "yzip", "yzip.exe")
+BZ = os.environ.get("MXZIP_REF_ARCHIVER", "")
+CLI = [sys.executable, "-W", "ignore", os.path.join(HERE, "mxzip_cli.py")]
+EXE = os.path.join(HERE, "dist", "MxZip", "MxZip.exe")
 QUICK = "--quick" in sys.argv
 RUNS = 1 if QUICK else 3
 MB = 1024 * 1024
@@ -81,8 +81,8 @@ def make_photos(d, n, size_mb):
 
 
 def make_small(d):
-    # any source tree with thousands of small files; YZIP_SMALL_SRC overrides the default
-    src = os.environ.get("YZIP_SMALL_SRC") or os.path.join(os.path.dirname(HERE), "rea")
+    # any source tree with thousands of small files; MXZIP_SMALL_SRC overrides the default
+    src = os.environ.get("MXZIP_SMALL_SRC") or os.path.join(os.path.dirname(HERE), "rea")
     shutil.copytree(src, d, ignore=shutil.ignore_patterns(".git", "node_modules"))
 
 
@@ -115,16 +115,16 @@ def manifest(root):
 
 # ---------- tools ----------
 def env_exe(t):
-    return dict(os.environ, QT_QPA_PLATFORM="offscreen", YZIP_NO_OPEN="1", LOCALAPPDATA=os.path.join(t, "local"))
+    return dict(os.environ, QT_QPA_PLATFORM="offscreen", MXZIP_NO_OPEN="1", LOCALAPPDATA=os.path.join(t, "local"))
 
 
 def tool_cmds(name, src, z, out, t, level):
     parent, base = os.path.dirname(src), os.path.basename(src)
     if name == "Third-party":
         return [BZ, "c", "-fmt:zip", f"-l:{level}", "-y", z, src], [BZ, "x", "-y", f"-o:{out}", z], None
-    if name == "yzip CLI":
+    if name == "MxZip CLI":
         return CLI + ["c", z, src, "-l", str(level)], CLI + ["x", z, "-o", out], None
-    if name == "yzip 우클릭(exe)":
+    if name == "MxZip 우클릭(exe)":
         lst = os.path.join(t, "sel.txt")
         with open(lst, "w", encoding="utf-8") as f:
             f.write(src + "\n")
@@ -153,7 +153,7 @@ def cross_check(z, base, src_manifest, t, maker):
     os.makedirs(chk)
     if maker == "Third-party":
         subprocess.run(CLI + ["x", z, "-o", chk], capture_output=True)
-        by = "yzip"
+        by = "MxZip"
     else:
         subprocess.run([BZ, "x", "-y", f"-o:{chk}", z], capture_output=True)
         by = "Third-party"
@@ -218,7 +218,7 @@ def bench_password(src):
     size = tree_size(src)
     for name, mk, ex in (("Third-party", lambda z: [BZ, "c", "-fmt:zip", "-l:5", "-p:Pw1234", "-y", z, src],
                           lambda z, o: [BZ, "x", "-y", "-p:Pw1234", f"-o:{o}", z]),
-                         ("yzip CLI", lambda z: CLI + ["c", z, src, "-l", "5", "-p", "Pw1234"],
+                         ("MxZip CLI", lambda z: CLI + ["c", z, src, "-l", "5", "-p", "Pw1234"],
                           lambda z, o: CLI + ["x", z, "-o", o, "-p", "Pw1234"])):
         with tempfile.TemporaryDirectory(prefix="yzp_") as t:
             z = os.path.join(t, "a.zip")
@@ -235,13 +235,13 @@ def bench_password(src):
 
 
 def bench_formats(src):
-    """Other formats on the same text data: yzip CLI (-fmt) against the third-party CLI where the third-party archiver writes that format."""
+    """Other formats on the same text data: MxZip CLI (-fmt) against the third-party CLI where the third-party archiver writes that format."""
     print("\n=== 다른 형식 (같은 텍스트 데이터)", flush=True)
     size = tree_size(src)
     rows = []
     for fid, ext, bzfmt in (("7z", ".7z", "7z"), ("tgz", ".tar.gz", "tgz"), ("txz", ".tar.xz", None),
                             ("tzst", ".tar.zst", None), ("tbz", ".tar.bz2", None)):
-        for tool in (("Third-party",) if bzfmt else ()) + ("yzip CLI",):
+        for tool in (("Third-party",) if bzfmt else ()) + ("MxZip CLI",):
             with tempfile.TemporaryDirectory(prefix="yzp_") as t:
                 z = os.path.join(t, "a" + (".tgz" if tool == "Third-party" and bzfmt == "tgz" else ext))
                 mk = [BZ, "c", f"-fmt:{bzfmt}", "-l:5", "-y", z, src] if tool == "Third-party" else \
@@ -263,7 +263,7 @@ def bench_latency(t):
     with open(p, "w", encoding="utf-8") as f:
         f.write("hello " * 1000)
     res = {}
-    for name, cmd in (("yzip 우클릭(exe)", lambda z, l: [EXE, "--archive-list", l, "--out", z]),
+    for name, cmd in (("MxZip 우클릭(exe)", lambda z, l: [EXE, "--archive-list", l, "--out", z]),
                       ("Third-party CLI", lambda z, l: [BZ, "c", "-fmt:zip", "-y", z, p])):
         walls = []
         for i in range(5):
@@ -280,7 +280,7 @@ def bench_latency(t):
 def main():
     out_json = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
     report = {"datasets": []}
-    tools = ["Third-party", "yzip CLI", "yzip 우클릭(exe)", "Windows tar"]
+    tools = ["Third-party", "MxZip CLI", "MxZip 우클릭(exe)", "Windows tar"]
     with tempfile.TemporaryDirectory(prefix="yzdata_") as data:
         t0 = time.time()
         make_text(os.path.join(data, "logs"), 120 if QUICK else 360)
@@ -296,7 +296,7 @@ def main():
         if not QUICK:
             make_huge(os.path.join(data, "huge"), 4.5)
             report["datasets"].append(bench_dataset("4.5GB 단일 파일 (zip64)", os.path.join(data, "huge"),
-                                                    ["Third-party", "yzip CLI"]))
+                                                    ["Third-party", "MxZip CLI"]))
             shutil.rmtree(os.path.join(data, "huge"), ignore_errors=True)
         report["password"] = bench_password(os.path.join(data, "logs"))
         report["formats"] = bench_formats(os.path.join(data, "logs"))

@@ -216,7 +216,7 @@ def write_zip(items, out_path: str, level: int = 6, store_only: bool = False,
     if _try_native_zip(metadata, out_path, 0 if store_only else level, workers,
                        progress, cancel, password, copy, allow_native):
         return
-    if os.environ.get("YZIP_NATIVE_ZIP_CREATE_REQUIRED") == "1":
+    if os.environ.get("MXZIP_NATIVE_ZIP_CREATE_REQUIRED") == "1":
         raise RuntimeError("native ZIP creation was required but the operation fell back")
     window = workers * 2
     done = 0
@@ -336,7 +336,7 @@ def _try_native_zip(metadata, out_path, level, workers, progress, cancel,
                     password, copy, allow_native):
     from ziplib import Cancelled
     if (not metadata or not allow_native or password or copy or
-            os.environ.get("YZIP_NATIVE_ZIP_CREATE") != "1"):
+            os.environ.get("MXZIP_NATIVE_ZIP_CREATE") != "1"):
         return False
     from archive_accel import AccelStatus, CAP_ZIP_CREATE, NativeZipCreateItem
     native_items = []

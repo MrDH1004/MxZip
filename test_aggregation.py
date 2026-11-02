@@ -13,15 +13,15 @@ import os, sys, json
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 sys.path.insert(0, {here!r})
 from PySide6.QtWidgets import QApplication
-import yzip_gui
+import mxzip_gui
 app = QApplication([])
-r = yzip_gui.gather_paths("aggtest", [sys.argv[1]])
+r = mxzip_gui.gather_paths("aggtest", [sys.argv[1]])
 print("RESULT " + json.dumps(r))
 """
 
 
 def run(n, stagger):
-    env = dict(os.environ, YZIP_GATHER_SCALE="0.6")
+    env = dict(os.environ, MXZIP_GATHER_SCALE="0.6")
     procs = []
     for i in range(n):
         procs.append(subprocess.Popen([sys.executable, "-W", "ignore", "-c", CHILD.format(here=HERE), f"C:\\files\\f{i}.txt"],

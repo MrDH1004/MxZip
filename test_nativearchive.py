@@ -48,10 +48,10 @@ class NativeArchiveTests(unittest.TestCase):
         import nativearchive_legacy
 
         with mock.patch.object(nativearchive_legacy, "native_dll_path", return_value=os.path.join(
-                self.tmp, "missing-yzip-native.dll")):
+                self.tmp, "missing-mxzip-native.dll")):
             with self.assertRaises(nativearchive.NativeBackendUnavailable) as ctx:
                 nativearchive_legacy.LegacyArchive(os.path.join(DATA, "normal.egg"), "egg")
-        self.assertIn("yzip_native", str(ctx.exception))
+        self.assertIn("mxzip_native", str(ctx.exception))
 
     def test_rar_volume_names_are_passed_as_one_reader_set(self):
         import nativearchive_ffi

@@ -34,12 +34,12 @@ class UpdaterTests(unittest.TestCase):
         cls.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeGitHub)
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
         cls.base = f"http://127.0.0.1:{cls.srv.server_address[1]}"
-        os.environ["YZIP_UPDATE_URL"] = cls.base + "/latest"
+        os.environ["MXZIP_UPDATE_URL"] = cls.base + "/latest"
 
     @classmethod
     def tearDownClass(cls):
         cls.srv.shutdown()
-        os.environ.pop("YZIP_UPDATE_URL", None)
+        os.environ.pop("MXZIP_UPDATE_URL", None)
 
     def publish(self, tag, payload=b"MZ fake installer" * 1000, sha=None, assets=True, **extra):
         name = f"MxZip-setup-{tag.lstrip('v')}.exe"
@@ -86,14 +86,14 @@ class UpdaterTests(unittest.TestCase):
         self.assertIsNone(updater.check("1.0.0"))
 
     def test_due_respects_setting_and_test_switch(self):
-        os.environ.pop("YZIP_NO_UPDATE", None)
+        os.environ.pop("MXZIP_NO_UPDATE", None)
         self.assertTrue(updater.due({}))
         self.assertFalse(updater.due({"auto_update": False}))
         import time
         self.assertTrue(updater.due({"update_checked_at": time.time() - 60}))
-        os.environ["YZIP_NO_UPDATE"] = "1"
+        os.environ["MXZIP_NO_UPDATE"] = "1"
         self.assertFalse(updater.due({}))
-        os.environ.pop("YZIP_NO_UPDATE")
+        os.environ.pop("MXZIP_NO_UPDATE")
 
 
 if __name__ == "__main__":

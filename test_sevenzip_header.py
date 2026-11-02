@@ -15,7 +15,7 @@ from ziplib import BadPassword
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SEVEN = os.path.join(HERE, "tools", "7z.exe")
-BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
+BZ = os.environ.get("MXZIP_REF_ARCHIVER", "")
 
 
 def key(e):
@@ -48,9 +48,9 @@ class SevenZipHeaderTests(unittest.TestCase):
     def archives(self):
         out = []
         for pw in (None, "암호 pw"):
-            path = os.path.join(self.root, f"yzip-{bool(pw)}.7z")
+            path = os.path.join(self.root, f"MxZip-{bool(pw)}.7z")
             formats.create("7z", [self.src], path, level=5, password=pw)
-            out.append((path, pw, "yzip"))
+            out.append((path, pw, "MxZip"))
         if os.path.exists(SEVEN):
             for tag, args, pw in (("7zip", ["-mx5"], None), ("7zip-store", ["-mx0"], None),
                                   ("7zip-nonsolid", ["-mx5", "-ms=off"], None),
@@ -90,7 +90,7 @@ class SevenZipHeaderTests(unittest.TestCase):
                     formats.SevenZArchive(path, "wrong")
 
     def test_wrong_password_for_data_is_reported(self):
-        path = os.path.join(self.root, "yzip.7z")
+        path = os.path.join(self.root, "MxZip.7z")
         formats.create("7z", [self.src], path, level=5, password="right")
         with self.assertRaises(BadPassword):
             with formats.open_any(path, "wrong") as a:

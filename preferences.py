@@ -269,8 +269,8 @@ class PreferencesDialog(QDialog):
             try:
                 for ext, item in self._association_items.items():
                     item.setCheckState(0, Qt.CheckState.Checked if ext in registered else Qt.CheckState.Unchecked)
-                    is_yzip, name = current.get(ext, (False, "없음"))
-                    item.setText(2, "MxZip" if is_yzip else name or "없음")
+                    is_mxzip, name = current.get(ext, (False, "없음"))
+                    item.setText(2, "MxZip" if is_mxzip else name or "없음")
             finally:
                 self.assoc_list.blockSignals(False)
             self._association_ready = True
@@ -502,7 +502,7 @@ class PreferencesDialog(QDialog):
             except Exception as exc:
                 results.put((None, exc))
 
-        threading.Thread(target=work, daemon=True, name="yzip-preferences-update").start()
+        threading.Thread(target=work, daemon=True, name="MxZip-preferences-update").start()
         self._update_timer.start()
 
     def _poll_update(self):

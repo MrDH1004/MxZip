@@ -45,7 +45,7 @@ class Native7zIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.dll = Path("nativeaccel/build/yzip_accel.dll").resolve()
+        self.dll = Path("nativeaccel/build/mxzip_accel.dll").resolve()
         if not self.dll.exists():
             self.fail("native DLL must be built before Task 4 integration tests")
         self.accel = archive_accel.load_accelerator(self.dll)
@@ -162,7 +162,7 @@ class Native7zIntegrationTests(unittest.TestCase):
         fake.capabilities = archive_accel.CAP_7Z_EXTRACT
         fake.inspect_7z.return_value = archive_accel.NativeArchiveInfo(True, False, False, 2)
         fake.extract_7z.return_value = archive_accel.NativeResult(archive_accel.AccelStatus.CORRUPT, 0)
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
              mock.patch.object(formats, "load_accelerator", return_value=fake):
             with formats.SevenZArchive(str(archive)) as opened:
                 with self.assertRaises(ValueError):
@@ -173,7 +173,7 @@ class Native7zIntegrationTests(unittest.TestCase):
     def test_formats_selected_member_uses_native_and_publishes_after_validation(self):
         archive = self.make_archive()
         dest = self.root / "selected"
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
              mock.patch.object(formats, "load_accelerator", return_value=self.accel):
             with formats.SevenZArchive(str(archive)) as opened:
                 opened.extract(str(dest), names=["a.txt"])
@@ -184,7 +184,7 @@ class Native7zIntegrationTests(unittest.TestCase):
         archive = self.make_archive()
         dest = self.root / "disabled-native"
         with mock.patch.dict(os.environ, {
-            "YZIP_NATIVE_7Z_EXTRACT": "1", "YZIP_DISABLE_ACCEL": "1",
+            "MXZIP_NATIVE_7Z_EXTRACT": "1", "MXZIP_DISABLE_ACCEL": "1",
         }, clear=False), mock.patch.object(
             formats, "load_accelerator", wraps=archive_accel.load_accelerator
         ), mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
@@ -224,7 +224,7 @@ class Native7zIntegrationTests(unittest.TestCase):
             return archive_accel.NativeResult(archive_accel.AccelStatus.UNSUPPORTED, 7)
 
         fake.extract_7z.side_effect = partial
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
              mock.patch.object(formats, "load_accelerator", return_value=fake):
             with formats.SevenZArchive(str(archive)) as opened:
                 with self.assertRaises(RuntimeError):
@@ -251,7 +251,7 @@ class Native7zIntegrationTests(unittest.TestCase):
                 raise PermissionError("injected staging cleanup failure")
             return real_remove(path)
 
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
              mock.patch.object(formats, "load_accelerator", return_value=fake), \
              mock.patch.object(formats.os, "remove", side_effect=blocked_remove):
             with formats.SevenZArchive(str(archive)) as opened:
@@ -267,7 +267,7 @@ class Native7zIntegrationTests(unittest.TestCase):
         dest = self.root / "corrupt-out"
         dest.mkdir()
         (dest / "a.txt").write_bytes(b"old")
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
              mock.patch.object(formats, "load_accelerator", return_value=self.accel):
             with self.assertRaises(Exception):
                 with formats.SevenZArchive(str(archive)) as opened:
@@ -283,7 +283,7 @@ class Native7zIntegrationTests(unittest.TestCase):
             fake = mock.Mock(capabilities=archive_accel.CAP_7Z_EXTRACT)
             with formats.SevenZArchive(str(archive)) as opened:
                 opened.infos = mutate(opened.infos)
-                with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+                with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
                      mock.patch.object(formats, "load_accelerator", return_value=fake), \
                      mock.patch.object(opened, "_run", side_effect=RuntimeError("python fallback")), \
                      mock.patch.object(opened, "_run_fast", side_effect=RuntimeError("python fallback")):
@@ -318,7 +318,7 @@ class Native7zIntegrationTests(unittest.TestCase):
         dest = self.root
         while len(str(dest)) < 275:
             dest = dest / ("long-segment-" + "x" * 24)
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
              mock.patch.object(formats, "load_accelerator", return_value=self.accel):
             with formats.SevenZArchive(str(archive)) as opened:
                 opened.extract(str(dest), names=["a.txt"])
@@ -333,7 +333,7 @@ class Native7zIntegrationTests(unittest.TestCase):
         with py7zr.SevenZipFile(archive, "w", filters=[{"id": py7zr.FILTER_LZMA2}]) as out:
             out.writeall(source, "")
         dest = self.root / "tree-out"
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_7Z_EXTRACT": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_7Z_EXTRACT": "1"}), \
              mock.patch.object(formats, "load_accelerator", return_value=self.accel):
             with formats.SevenZArchive(str(archive)) as opened:
                 opened.extract(str(dest))

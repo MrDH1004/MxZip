@@ -10,7 +10,7 @@ import packaged_native_smoke
 
 
 ROOT = Path(__file__).resolve().parent
-BINARIES = ("7z.exe", "7z.dll", "libarchive.dll", "yzip_native.dll", "zpaq.exe")
+BINARIES = ("7z.exe", "7z.dll", "libarchive.dll", "mxzip_native.dll", "zpaq.exe")
 LICENSES = {
     "7-Zip License.txt": "7-Zip",
     "libarchive COPYING.txt": "libarchive",
@@ -24,7 +24,7 @@ LICENSES = {
 
 class NativePackageContractTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="yzip-package-contract-")
+        self.temp = tempfile.TemporaryDirectory(prefix="MxZip-package-contract-")
         self.tools = Path(self.temp.name)
         (self.tools / "licenses").mkdir()
         for name in BINARIES:
@@ -103,7 +103,7 @@ class NativePackageContractTests(unittest.TestCase):
     def test_staged_payload_validator_checks_manifest_runtime_and_license(self):
         runtime = self.tools / "7z.dll"
         runtime.write_bytes(b"pinned runtime")
-        (self.tools / "yzip_accel.dll").write_bytes(b"bridge")
+        (self.tools / "mxzip_accel.dll").write_bytes(b"bridge")
         digest = hashlib.sha256(runtime.read_bytes()).hexdigest()
         (self.tools / "7zip-pins.json").write_text(json.dumps({
             "binary_sha256": {"7z.dll": digest},
@@ -117,7 +117,7 @@ class NativePackageContractTests(unittest.TestCase):
             packaged_native_smoke.validate_packaged_payload(self.tools)
 
     def test_built_staged_smoke_subprocess_when_app_is_available(self):
-        staged = ROOT / "dist" / "yzip" / "_internal" / "tools" / "yzip_accel.dll"
+        staged = ROOT / "dist" / "MxZip" / "_internal" / "tools" / "mxzip_accel.dll"
         if not staged.is_file():
             self.skipTest("run build.ps1 -Stage app before the staged smoke")
         result = subprocess.run(

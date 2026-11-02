@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SignPath artifact configuration "installer": the Inno Setup installer uploaded by GitHub Actions (a zip
-     holding yzip-setup-X.Y.Z.exe). Inno Setup pads the version strings of its setup stub with spaces
-     ("yzip      ..."), so add product-name="yzip" here only if SignPath's check accepts that padding. -->
+     holding MxZip-setup-X.Y.Z.exe). Inno Setup pads the version strings of its setup stub with spaces
+     ("MxZip      ..."), so add product-name="MxZip" here only if SignPath's check accepts that padding. -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <zip-file>
-    <pe-file path="yzip-setup-*.exe">
+    <pe-file path="MxZip-setup-*.exe">
       <authenticode-sign />
     </pe-file>
   </zip-file>

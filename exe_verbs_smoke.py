@@ -1,6 +1,6 @@
 """End-to-end test of the BUILT exe through the exact command lines Explorer runs (read back from HKCU).
 
-Headless: QT_QPA_PLATFORM=offscreen, YZIP_NO_OPEN (don't open Explorer), YZIP_AUTOACCEPT (accept the compress
+Headless: QT_QPA_PLATFORM=offscreen, MXZIP_NO_OPEN (don't open Explorer), MXZIP_AUTOACCEPT (accept the compress
 dialog and quit after it), LOCALAPPDATA redirected so error.log is isolated. Startup timing is real (no scaling).
 Usage: python exe_verbs_smoke.py [--keep-registered]
 """
@@ -13,7 +13,7 @@ import time
 import winreg
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-EXE = os.path.join(HERE, "dist", "yzip", "yzip.exe")
+EXE = os.path.join(HERE, "dist", "MxZip", "MxZip.exe")
 sys.path.insert(0, HERE)
 import ziplib  # noqa: E402
 
@@ -44,21 +44,21 @@ def sha(p):
 
 
 def env_for(local):
-    return dict(os.environ, QT_QPA_PLATFORM="offscreen", YZIP_NO_OPEN="1", YZIP_AUTOACCEPT="1", LOCALAPPDATA=local)
+    return dict(os.environ, QT_QPA_PLATFORM="offscreen", MXZIP_NO_OPEN="1", MXZIP_AUTOACCEPT="1", LOCALAPPDATA=local)
 
 
 def log_text(local):
-    p = os.path.join(local, "yzip", "error.log")
+    p = os.path.join(local, "MxZip", "error.log")
     return open(p, encoding="utf-8").read() if os.path.exists(p) else ""
 
 
-assert os.path.exists(EXE), "build first: pyinstaller ... --name yzip"
+assert os.path.exists(EXE), "build first: pyinstaller ... --name MxZip"
 
 
 def registered_exe():
-    """The exe the user's Explorer menu points at now (an installed yzip), to put it back afterwards."""
+    """The exe the user's Explorer menu points at now (an installed MxZip), to put it back afterwards."""
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\yzip") as k:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\MxZip") as k:
             exe = winreg.QueryValueEx(k, "Command")[0].strip().strip('"')
         return exe if os.path.isfile(exe) else None
     except OSError:
@@ -67,7 +67,7 @@ def registered_exe():
 
 BEFORE = registered_exe()
 
-# ---- registry: migrate stale ZipKit.* verbs, register yzip.* for this exe ----
+# ---- registry: migrate stale ZipKit.* verbs, register MxZip.* for this exe ----
 legacy = [r"Software\Classes\*\shell\ZipKit.Compress", r"Software\Classes\Directory\shell\ZipKit.Compress",
           r"Software\Classes\SystemFileAssociations\.zip\shell\ZipKit.Here",
           r"Software\Classes\SystemFileAssociations\.zip\shell\ZipKit.Folder"]
@@ -75,11 +75,11 @@ had_legacy = [k for k in legacy if key_exists(k)]
 r = subprocess.run([EXE, "--register-shell"], timeout=60)
 check("exe --register-shell exits 0 (no UI)", r.returncode == 0, r.returncode)
 check(f"stale ZipKit.* verbs removed (had {len(had_legacy)})", not any(key_exists(k) for k in legacy))
-KEY_COMPRESS = r"Software\Classes\*\shell\yzip.Compress"
-KEY_DIR = r"Software\Classes\Directory\shell\yzip.Compress"
-KEY_HERE = r"Software\Classes\SystemFileAssociations\.zip\shell\yzip.Here"
-KEY_FOLDER = r"Software\Classes\SystemFileAssociations\.zip\shell\yzip.Folder"
-CLSID = "{7E3B1C52-9A4D-4F1E-B6C2-3D8A5F0E9C71}"
+KEY_COMPRESS = r"Software\Classes\*\shell\MxZip.Compress"
+KEY_DIR = r"Software\Classes\Directory\shell\MxZip.Compress"
+KEY_HERE = r"Software\Classes\SystemFileAssociations\.zip\shell\MxZip.Here"
+KEY_FOLDER = r"Software\Classes\SystemFileAssociations\.zip\shell\MxZip.Folder"
+CLSID = "{E856C547-DF4F-438A-9357-3225756E4D24}"
 # the command lines of the static verbs, used when no shell extension is installed
 cmds = {KEY_HERE: f'"{EXE}" --extract-here "%1"', KEY_FOLDER: f'"{EXE}" --extract-folder "%1"',
         KEY_COMPRESS: f'"{EXE}" --archive "%1"'}
@@ -87,12 +87,12 @@ check("static compress verbs replaced by the shell extension", not key_exists(KE
 check("static extract verbs replaced by the shell extension", not key_exists(KEY_HERE) and not key_exists(KEY_FOLDER))
 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\CLSID\{CLSID}\InprocServer32") as k:
     dll = winreg.QueryValueEx(k, "")[0]
-with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\yzip") as k:
+with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\MxZip") as k:
     app_cmd = winreg.QueryValueEx(k, "Command")[0]
 check("shell extension DLL installed outside dist (rebuild-safe)", os.path.exists(dll) and "dist" not in dll.lower(), dll)
-check("shell extension launches dist\\yzip\\yzip.exe", EXE.lower() in app_cmd.lower(), app_cmd)
-SHELLEX_KEYS = [r"Software\Classes\*\shellex\ContextMenuHandlers\AAAyzip",
-                r"Software\Classes\Directory\shellex\ContextMenuHandlers\AAAyzip"]
+check("shell extension launches dist\\MxZip\\MxZip.exe", EXE.lower() in app_cmd.lower(), app_cmd)
+SHELLEX_KEYS = [r"Software\Classes\*\shellex\ContextMenuHandlers\AAAmxzip",
+                r"Software\Classes\Directory\shellex\ContextMenuHandlers\AAAmxzip"]
 registered_handlers = []
 for sub in SHELLEX_KEYS:
     try:
@@ -100,7 +100,7 @@ for sub in SHELLEX_KEYS:
             registered_handlers.append(winreg.QueryValueEx(key, "")[0])
     except OSError:
         registered_handlers.append(None)
-check("file and directory context-menu handler registrations point to yzip CLSID",
+check("file and directory context-menu handler registrations point to MxZip CLSID",
       registered_handlers == [CLSID, CLSID], registered_handlers)
 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"Software\Classes\CLSID\{CLSID}\InprocServer32") as key:
     threading_model = winreg.QueryValueEx(key, "ThreadingModel")[0]
@@ -116,8 +116,8 @@ def probe(mode, paths, env=None):
     return r.returncode, [ln.split("\t")[1:] for ln in out.splitlines() if ln.startswith("ITEM\t")], out
 
 
-def yzip_item(items):  # by verb: The third-party archiver, if installed, adds an item with identical text
-    return [it for it in items if len(it) > 2 and it[2] == "yzip.compress"]
+def mxzip_item(items):  # by verb: The third-party archiver, if installed, adds an item with identical text
+    return [it for it in items if len(it) > 2 and it[2] == "MxZip.compress"]
 
 
 def wait_done(out, timeout=60):
@@ -222,14 +222,14 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
     open(os.path.join(t, "pack.txt"), "w").close()  # pack.zip already exists next to it
     for name, paths, want in cases:
         code, items, raw = probe("list", paths)
-        mine = yzip_item(items)
+        mine = mxzip_item(items)
         check(f"menu label, {name}: '{want}'", code == 0 and len(mine) == 1 and mine[0][0] == want, (code, mine, raw[-300:]))
-    check("menu item carries the yzip icon", any(len(it) > 1 and it[1] == "[icon]" for it in yzip_item(probe("list", [files["b.bin"]])[1])))
-    dlg_items = [it for it in probe("list", trio)[1] if len(it) > 2 and it[2] == "yzip.compressdlg"]
+    check("menu item carries the MxZip icon", any(len(it) > 1 and it[1] == "[icon]" for it in mxzip_item(probe("list", [files["b.bin"]])[1])))
+    dlg_items = [it for it in probe("list", trio)[1] if len(it) > 2 and it[2] == "MxZip.compressdlg"]
     check("second item 'MxZip으로 압축하기(&W)...' (opens the compress window)",
           [it[0] for it in dlg_items] == ["MxZip으로 압축하기(&W)..."], dlg_items)
     code, items, _ = probe("defaultonly", [files["b.bin"]])
-    check("CMF_DEFAULTONLY: handler adds nothing", not yzip_item(items), items)
+    check("CMF_DEFAULTONLY: handler adds nothing", not mxzip_item(items), items)
 
     env = env_for(local)
     before = set(os.listdir(os.environ.get("TEMP")))
@@ -240,8 +240,8 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
         with ziplib.Archive(out) as a:
             check("invoke on one file: archive valid and identical", a.test() == [] and [e.name for e in a.entries()] == ["b.bin"])
         import zipfile
-        with zipfile.ZipFile(out) as zf:  # yzip's writer streams with data descriptors; proves yzip (not the third-party archiver) ran
-            check("invoke on one file: written by yzip", all(i.flag_bits & 0x08 for i in zf.infolist()),
+        with zipfile.ZipFile(out) as zf:  # MxZip's writer streams with data descriptors; proves MxZip (not the third-party archiver) ran
+            check("invoke on one file: written by MxZip", all(i.flag_bits & 0x08 for i in zf.infolist()),
                   [hex(i.flag_bits) for i in zf.infolist()])
     code, _, raw = probe("invoke", trio, env)
     out = os.path.join(sel, "선택 폴더.zip")
@@ -251,10 +251,10 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
         with ziplib.Archive(out) as a:
             got = sorted(e.name for e in a.entries() if not e.is_dir)
         check("invoke on 3 files: archive has all 3", got == ["f0.txt", "f1.txt", "f2.txt"], got)
-    # "yzip으로 압축하기..." -> compress window (auto-accepted with format 7z) -> 7z made by the built exe
-    code, _, raw = probe("invokedlg", [src], dict(env, YZIP_AUTOACCEPT="7z"))
+    # "MxZip으로 압축하기..." -> compress window (auto-accepted with format 7z) -> 7z made by the built exe
+    code, _, raw = probe("invokedlg", [src], dict(env, MXZIP_AUTOACCEPT="7z"))
     out7 = src + ".7z"
-    check("invoke 'yzip으로 압축하기...': window -> src.7z created by the exe", code == 0 and wait_done(out7, 120),
+    check("invoke 'MxZip으로 압축하기...': window -> src.7z created by the exe", code == 0 and wait_done(out7, 120),
           (code, raw[-300:], os.listdir(t)))
     if os.path.exists(out7):
         import formats  # noqa: E402
@@ -264,40 +264,40 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
         check("exe-made 7z is valid and complete", ok7 and any("c.txt" in n for n in names), names)
     # extract items: only for archives, in the extract section (before the compress items), the usual archiver style
     # "<folder>\에 압축 풀기" naming the real target, numbered when that folder exists
-    verbs = [it[2] for it in probe("list", [z])[1] if len(it) > 2 and it[2].startswith("yzip.")]
-    check("archive: extract items only, no compress items", verbs == ["yzip.extracthere", "yzip.extractfolder"], verbs)
+    verbs = [it[2] for it in probe("list", [z])[1] if len(it) > 2 and it[2].startswith("MxZip.")]
+    check("archive: extract items only, no compress items", verbs == ["MxZip.extracthere", "MxZip.extractfolder"], verbs)
     check("non-archive: no extract items", not [it for it in probe("list", [files["b.bin"]])[1]
-                                                  if len(it) > 2 and it[2].startswith("yzip.extract")])
+                                                  if len(it) > 2 and it[2].startswith("MxZip.extract")])
     import shutil  # noqa: E402
     egg = os.path.join(t, "sample.egg")
     shutil.copy(os.path.join(HERE, "testdata", "normal.egg"), egg)
     iso = os.path.join(t, "disc.iso")
     open(iso, "wb").close()
-    yv = lambda p: [it[2] for it in probe("list", [p])[1] if len(it) > 2 and it[2].startswith("yzip.")]
-    check("EGG (read via unegg): extract items only", yv(egg) == ["yzip.extracthere", "yzip.extractfolder"], yv(egg))
+    yv = lambda p: [it[2] for it in probe("list", [p])[1] if len(it) > 2 and it[2].startswith("MxZip.")]
+    check("EGG (read via unegg): extract items only", yv(egg) == ["MxZip.extracthere", "MxZip.extractfolder"], yv(egg))
     check("ISO (disk image): extract items and compress items",
-          yv(iso) == ["yzip.extracthere", "yzip.extractfolder", "yzip.compress", "yzip.compressdlg"], yv(iso))
-    code, _, raw = probe("invoke:yzip.extractfolder", [egg], env)
+          yv(iso) == ["MxZip.extracthere", "MxZip.extractfolder", "MxZip.compress", "MxZip.compressdlg"], yv(iso))
+    code, _, raw = probe("invoke:MxZip.extractfolder", [egg], env)
     got = os.path.join(t, "sample", "hello.txt")
     check("invoke '폴더에 압축 풀기' on an EGG: extracted by the bundled unegg", code == 0 and wait_done(got),
           (code, raw[-300:], os.listdir(t)))
-    label = lambda: [it[0] for it in probe("list", [z])[1] if len(it) > 2 and it[2] == "yzip.extractfolder"]
+    label = lambda: [it[0] for it in probe("list", [z])[1] if len(it) > 2 and it[2] == "MxZip.extractfolder"]
     check("folder item names the folder: 'pack\\에 압축 풀기'", label() == ["pack\\에 압축 풀기"], label())
-    code, _, raw = probe("invoke:yzip.extractfolder", [z], env)
+    code, _, raw = probe("invoke:MxZip.extractfolder", [z], env)
     got = os.path.join(t, "pack", "b.bin")
     check("invoke '폴더에 압축 풀기': pack\\ with identical files", code == 0 and wait_done(got)
           and sha(got) == sha(files["b.bin"]), (code, raw[-300:], os.listdir(t)))
     check("folder exists -> 'pack (2)\\에 압축 풀기'", label() == ["pack (2)\\에 압축 풀기"], label())
-    code, _, raw = probe("invoke:yzip.extractfolder", [z], env)
+    code, _, raw = probe("invoke:MxZip.extractfolder", [z], env)
     got = os.path.join(t, "pack (2)", "b.bin")
     check("invoke again: extracted into a new 'pack (2)', not mixed into pack", code == 0 and wait_done(got)
           and sha(got) == sha(files["b.bin"]), (code, raw[-300:], os.listdir(t)))
-    code, _, raw = probe("invoke:yzip.extracthere", [z], env)  # 3 top items -> smart folder, numbered too
+    code, _, raw = probe("invoke:MxZip.extracthere", [z], env)  # 3 top items -> smart folder, numbered too
     got = os.path.join(t, "pack (3)", "b.bin")
     check("invoke '여기에 압축 풀기': smart folder numbered 'pack (3)'", code == 0 and wait_done(got)
           and sha(got) == sha(files["b.bin"]), (code, raw[-300:], os.listdir(t)))
     time.sleep(1)
-    left = [f for f in set(os.listdir(os.environ.get("TEMP"))) - before if f.startswith("yzip_sel_")]
+    left = [f for f in set(os.listdir(os.environ.get("TEMP"))) - before if f.startswith("mxzip_sel_")]
     check("selection list files cleaned up", not left, left)
     check("invoke: error.log empty", log_text(local) == "", log_text(local)[-300:])
 
@@ -349,8 +349,8 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
 
 if "--keep-registered" not in sys.argv:
     subprocess.run([EXE, "--unregister-shell"], timeout=60)
-    check("cleanup: yzip verbs and shell extension unregistered",
-          not key_exists(KEY_HERE) and not key_exists(rf"Software\Classes\CLSID\{CLSID}") and not key_exists(r"Software\yzip"))
+    check("cleanup: MxZip verbs and shell extension unregistered",
+          not key_exists(KEY_HERE) and not key_exists(rf"Software\Classes\CLSID\{CLSID}") and not key_exists(r"Software\MxZip"))
     if BEFORE:  # the user's menu was registered before this run: restore it to the same exe
         subprocess.run([BEFORE, "--register-shell"], timeout=60)
         check("cleanup: the user's own registration is restored", registered_exe() == BEFORE, registered_exe())

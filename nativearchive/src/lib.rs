@@ -19,7 +19,7 @@ const ERR_PASSWORD: c_int = 3;
 const ERR_PARTIAL: c_int = 4;
 
 static LAST_ERROR: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
-static VERSION: &[u8] = b"yzip-native/0.1\0";
+static VERSION: &[u8] = b"mxzip-native/0.1\0";
 
 #[derive(Debug)]
 struct NativeError {
@@ -247,12 +247,12 @@ fn finish(error: Result<()>) -> c_int {
 }
 
 #[no_mangle]
-pub extern "C" fn yzip_native_version() -> *const c_char {
+pub extern "C" fn mxzip_native_version() -> *const c_char {
     VERSION.as_ptr().cast()
 }
 
 #[no_mangle]
-pub extern "C" fn yzip_native_last_error() -> *const c_char {
+pub extern "C" fn mxzip_native_last_error() -> *const c_char {
     match error_cell().lock() {
         Ok(current) if !current.is_empty() => current.as_ptr().cast(),
         _ => c"native backend error".as_ptr().cast(),
@@ -260,9 +260,9 @@ pub extern "C" fn yzip_native_last_error() -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn yzip_native_free_string(value: *mut c_char) {
+pub extern "C" fn mxzip_native_free_string(value: *mut c_char) {
     if !value.is_null() {
-        // SAFETY: only pointers returned by yzip_native_list are accepted.
+        // SAFETY: only pointers returned by mxzip_native_list are accepted.
         unsafe {
             drop(CString::from_raw(value));
         }
@@ -270,7 +270,7 @@ pub extern "C" fn yzip_native_free_string(value: *mut c_char) {
 }
 
 #[no_mangle]
-pub extern "C" fn yzip_native_list(
+pub extern "C" fn mxzip_native_list(
     kind: *const c_char,
     path: *const c_char,
     _password: *const c_char,
@@ -301,7 +301,7 @@ pub extern "C" fn yzip_native_list(
 }
 
 #[no_mangle]
-pub extern "C" fn yzip_native_extract(
+pub extern "C" fn mxzip_native_extract(
     kind: *const c_char,
     path: *const c_char,
     destination: *const c_char,

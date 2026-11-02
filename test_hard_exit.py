@@ -1,4 +1,4 @@
-"""appcore.hard_exit: the exe's exit path (yzip_main / yzip_gui.finish). It must keep the exit code, flush Python's
+"""appcore.hard_exit: the exe's exit path (mxzip_main / mxzip_gui.finish). It must keep the exit code, flush Python's
 stdio buffers and skip DLL_PROCESS_DETACH, where shiboken6's static destructors crashed with 0xC0000005."""
 import os
 import subprocess
@@ -39,18 +39,18 @@ class HardExit(unittest.TestCase):
         # an exception out of main() is logged and ends with exit code 1, not a normal interpreter exit
         import tempfile
         with tempfile.TemporaryDirectory() as d:
-            r = subprocess.run([sys.executable, "yzip_main.py", "--archive-list", os.path.join(d, "missing.txt"),
+            r = subprocess.run([sys.executable, "mxzip_main.py", "--archive-list", os.path.join(d, "missing.txt"),
                                 "--out", os.path.join(d, "x.zip")], cwd=HERE, capture_output=True, timeout=60,
-                               env=dict(os.environ, LOCALAPPDATA=d, YZIP_NO_UPDATE="1", QT_QPA_PLATFORM="offscreen"))
+                               env=dict(os.environ, LOCALAPPDATA=d, MXZIP_NO_UPDATE="1", QT_QPA_PLATFORM="offscreen"))
             self.assertEqual(r.returncode, 1)
             logs = [os.path.join(dp, f) for dp, _, fs in os.walk(d) for f in fs if f.endswith(".log")]
             self.assertTrue(any("FileNotFoundError" in open(p, encoding="utf-8", errors="replace").read() for p in logs))
 
     def test_exit_with_qt_loaded(self):
         r = run("from PySide6.QtWidgets import QApplication, QLabel\n"
-                "import yzip_gui\n"
+                "import mxzip_gui\n"
                 "app = QApplication([]); w = QLabel('x'); w.show(); app.processEvents()\n"
-                "yzip_gui.finish(5)")
+                "mxzip_gui.finish(5)")
         self.assertEqual(r.returncode, 5, r.stderr[-2000:])
 
 

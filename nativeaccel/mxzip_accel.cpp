@@ -1,4 +1,4 @@
-#include "yzip_accel.h"
+#include "mxzip_accel.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -102,7 +102,7 @@ enum class TestWriteFault {
 TestWriteFault configured_test_write_fault() noexcept {
     wchar_t value[16]{};
     const DWORD length = GetEnvironmentVariableW(
-        L"YZIP_NATIVE_TEST_WRITE_FAULT", value, static_cast<DWORD>(std::size(value)));
+        L"MXZIP_NATIVE_TEST_WRITE_FAULT", value, static_cast<DWORD>(std::size(value)));
     if (length == 7 && wcscmp(value, L"failure") == 0) {
         return TestWriteFault::failure;
     }

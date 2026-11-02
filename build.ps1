@@ -1,6 +1,6 @@
-﻿# yzip 빌드: 버전 리소스 → 셸 확장 DLL → PyInstaller exe → 설치 파일(Inno Setup) → SHA-256.
+﻿# MxZip 빌드: 버전 리소스 → 셸 확장 DLL → PyInstaller exe → 설치 파일(Inno Setup) → SHA-256.
 #   -Stage app        DLL과 exe까지 (CI는 이 결과를 SignPath로 서명한 뒤 installer 단계를 실행)
-#   -Stage installer  dist\yzip 으로 설치 파일만
+#   -Stage installer  dist\MxZip 으로 설치 파일만
 #   -Stage all        전부 (기본값)
 # 기본 빌드는 인증서가 있어도 unsigned입니다. 로컬 테스트 서명은 -SignArtifacts를 명시한 경우에만 사용합니다.
 # 타임스탬프는 넣지 않습니다(외부 서버로 해시를 보내지 않음). 공인 서명은 GitHub Actions + SignPath.
@@ -13,8 +13,8 @@ $root = $PSScriptRoot
 $cert = $null
 if ($SignArtifacts) {
     $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert -ErrorAction SilentlyContinue |
-        Where-Object Subject -eq "CN=yzip (self-signed test)" | Select-Object -First 1
-    if (-not $cert) { throw "-SignArtifacts requested, but the yzip test signing certificate is missing" }
+        Where-Object Subject -eq "CN=MxZip (self-signed test)" | Select-Object -First 1
+    if (-not $cert) { throw "-SignArtifacts requested, but the MxZip test signing certificate is missing" }
 }
 
 function Sign($file) {
@@ -37,21 +37,21 @@ Push-Location $root
 try {
     $version = (python make_version_files.py).Trim()
     if ($Stage -in "all", "app") {
-        & "$root\fetch_tools.ps1"  # tools\: 7-Zip compatibility reader, libarchive, yzip_native (pinned)
+        & "$root\fetch_tools.ps1"  # tools\: 7-Zip compatibility reader, libarchive, mxzip_native (pinned)
         & "$root\nativeaccel\build.ps1" -OutputDirectory "$root\tools"
         cmd /c "`"$root\shell\build.cmd`" 2>nul" | Select-Object -Last 1
         if ($LASTEXITCODE) { throw "셸 확장 빌드 실패" }
-        Sign "$root\shell\build\yzipshell.dll"
+        Sign "$root\shell\build\mxzipshell.dll"
         # setuptools is excluded: nothing needs it at run time, but bundled, its runtime hook imported it on
         # every launch (~0.15 s of the right-click delay).
-        # --clean: a cached build\yzip\yzip.exe kept the old icon after yzip.ico changed.
-        Run python @("-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--windowed", "--name", "yzip",
-            "--icon", "yzip.ico", "--version-file", "build\version_info.txt", "--add-data", "yzip.ico;.",
+        # --clean: a cached build\MxZip\MxZip.exe kept the old icon after MxZip.ico changed.
+        Run python @("-m", "PyInstaller", "--noconfirm", "--clean", "--onedir", "--windowed", "--name", "MxZip",
+            "--icon", "MxZip.ico", "--version-file", "build\version_info.txt", "--add-data", "MxZip.ico;.",
             "--add-data", "LICENSE;.",
-            "--add-binary", "shell\build\yzipshell.dll;.", "--add-binary", "tools\7z.exe;tools",
+            "--add-binary", "shell\build\mxzipshell.dll;.", "--add-binary", "tools\7z.exe;tools",
             "--add-binary", "tools\7z.dll;tools", "--add-binary", "tools\libarchive.dll;tools",
-            "--add-binary", "tools\yzip_accel.dll;tools", "--add-data", "tools\7zip-pins.json;tools",
-            "--add-binary", "tools\yzip_native.dll;tools", "--add-binary", "tools\zpaq.exe;tools",
+            "--add-binary", "tools\mxzip_accel.dll;tools", "--add-data", "tools\7zip-pins.json;tools",
+            "--add-binary", "tools\mxzip_native.dll;tools", "--add-binary", "tools\zpaq.exe;tools",
             "--add-data", "tools\licenses;tools\licenses",
             "--hidden-import", "archive_accel", "--hidden-import", "cliarchive", "--hidden-import", "nativearchive", "--hidden-import", "nativearchive_ffi",
             "--hidden-import", "nativearchive_libarchive", "--hidden-import", "nativearchive_legacy", "--hidden-import", "minifmt", "--hidden-import", "sevenzip_header",
@@ -60,14 +60,14 @@ try {
             "--exclude-module", "PySide6.QtWebEngineCore",
             "--exclude-module", "PySide6.QtQml", "--exclude-module", "PySide6.Qt3DCore",
             "--exclude-module", "setuptools", "--exclude-module", "pkg_resources",
-            "--exclude-module", "_distutils_hack", "--hidden-import", "zpaqarchive", "--hidden-import", "yzip_gui", "yzip_main.py")
-        Sign "$root\dist\yzip\yzip.exe"
+            "--exclude-module", "_distutils_hack", "--hidden-import", "zpaqarchive", "--hidden-import", "mxzip_gui", "mxzip_main.py")
+        Sign "$root\dist\MxZip\MxZip.exe"
     }
     if ($Stage -in "all", "installer") {
         $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") |
             Where-Object { Test-Path $_ } | Select-Object -First 1
         if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe)가 없습니다" }
-        Run $iscc @("/Q", "/DAppVersion=$version", "$root\installer\yzip.iss")
+        Run $iscc @("/Q", "/DAppVersion=$version", "$root\installer\MxZip.iss")
         $setup = "$root\dist\MxZip-setup-$version.exe"
         Sign $setup
         # the updater checks this; CI writes it again after the installer is signed

@@ -15,7 +15,7 @@ import ziplib
 
 class ZipExtractPerfTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="yzip-extract-perf-test-")
+        self.temp = tempfile.TemporaryDirectory(prefix="MxZip-extract-perf-test-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.archive = self.root / "input.zip"

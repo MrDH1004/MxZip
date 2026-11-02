@@ -1,14 +1,14 @@
 // Test the real DLL menu implementation against a private HKCU view.
-// Compile with the same Windows SDK/libraries as yzipshell.cpp.
-#include "yzipshell.cpp"
+// Compile with the same Windows SDK/libraries as mxzipshell.cpp.
+#include "mxzipshell.cpp"
 #include <stdio.h>
 
 static bool verify_menu(const wchar_t* path, DWORD mask, bool archive) {
     HKEY config = nullptr;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\yzip", 0, nullptr, 0,
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\MxZip", 0, nullptr, 0,
                         KEY_ALL_ACCESS, nullptr, &config, nullptr) != ERROR_SUCCESS)
         return false;
-    const wchar_t command[] = L"yzip.exe";
+    const wchar_t command[] = L"MxZip.exe";
     const wchar_t exts[] = L".zip;.alz";
     bool written = RegSetValueExW(config, L"Command", 0, REG_SZ,
                                 (const BYTE*)command, sizeof(command)) == ERROR_SUCCESS &&
@@ -31,7 +31,7 @@ static bool verify_menu(const wchar_t* path, DWORD mask, bool archive) {
     if (SUCCEEDED(hr))
         hr = SHCreateDataObject(parent_id, 1, &child, nullptr, IID_PPV_ARGS(&data));
     bool ok = SUCCEEDED(hr);
-    YzipMenu* handler = new YzipMenu();
+    MxZipMenu* handler = new MxZipMenu();
     HMENU menu = CreatePopupMenu();
     if (ok)
         ok = SUCCEEDED(handler->Initialize(nullptr, data, nullptr));
@@ -43,11 +43,11 @@ static bool verify_menu(const wchar_t* path, DWORD mask, bool archive) {
             wchar_t verb[128] = {};
             ok = SUCCEEDED(handler->GetCommandString(i, GCS_VERBW, nullptr, (LPSTR)verb, 128));
             if (archive)
-                ok = ok && ((lstrcmpW(verb, L"yzip.extracthere") == 0 && (mask & 2)) ||
-                            (lstrcmpW(verb, L"yzip.extractfolder") == 0 && (mask & 4)));
+                ok = ok && ((lstrcmpW(verb, L"MxZip.extracthere") == 0 && (mask & 2)) ||
+                            (lstrcmpW(verb, L"MxZip.extractfolder") == 0 && (mask & 4)));
             else
-                ok = ok && ((lstrcmpW(verb, L"yzip.compress") == 0 ||
-                             lstrcmpW(verb, L"yzip.compressdlg") == 0) && (mask & 1));
+                ok = ok && ((lstrcmpW(verb, L"MxZip.compress") == 0 ||
+                             lstrcmpW(verb, L"MxZip.compressdlg") == 0) && (mask & 1));
         }
     }
     DestroyMenu(menu);
@@ -63,7 +63,7 @@ static bool verify_menu(const wchar_t* path, DWORD mask, bool archive) {
 // then "각각 ZIP 파일로 압축하기", then the dialog item; without the setting only the folder-named item and the dialog.
 static bool verify_multi(const std::wstring& a, const std::wstring& b, DWORD separate) {
     HKEY config = nullptr;
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\yzip", 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &config, nullptr) != ERROR_SUCCESS)
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\MxZip", 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &config, nullptr) != ERROR_SUCCESS)
         return false;
     DWORD mask = 7;
     bool written = RegSetValueExW(config, L"MenuMask", 0, REG_DWORD, (const BYTE*)&mask, sizeof(mask)) == ERROR_SUCCESS &&
@@ -80,10 +80,10 @@ static bool verify_multi(const std::wstring& a, const std::wstring& b, DWORD sep
     PCUITEMID_CHILD children[2] = {ILFindLastID(ida), ILFindLastID(idb)};
     IDataObject* data = nullptr;
     bool ok = SUCCEEDED(SHCreateDataObject(parent_id, 2, children, nullptr, IID_PPV_ARGS(&data)));
-    YzipMenu* handler = new YzipMenu();
+    MxZipMenu* handler = new MxZipMenu();
     HMENU menu = CreatePopupMenu();
     ok = ok && SUCCEEDED(handler->Initialize(nullptr, data, nullptr));
-    const wchar_t* expected[] = {L"yzip.compress", L"yzip.compresseach", L"yzip.compressdlg"};
+    const wchar_t* expected[] = {L"MxZip.compress", L"MxZip.compresseach", L"MxZip.compressdlg"};
     std::vector<const wchar_t*> want = separate ? std::vector<const wchar_t*>{expected[0], expected[1], expected[2]}
                                                 : std::vector<const wchar_t*>{expected[0], expected[2]};
     if (ok) {
@@ -93,7 +93,7 @@ static bool verify_multi(const std::wstring& a, const std::wstring& b, DWORD sep
             wchar_t verb[128] = {};
             ok = SUCCEEDED(handler->GetCommandString(i, GCS_VERBW, nullptr, (LPSTR)verb, 128)) && !lstrcmpW(verb, want[i]);
         }
-        // the first item names the folder the files are in: "<folder>.zip으로 압축하기 - &yzip"
+        // the first item names the folder the files are in: "<folder>.zip으로 압축하기 - &MxZip"
         std::wstring dir = a.substr(0, last_sep(a));
         std::wstring label(256, L'\0');
         if (ok)
@@ -113,7 +113,7 @@ int wmain(int argc, wchar_t** argv) {
     if (argc != 3 || !exists(argv[1]) || !exists(argv[2])) return 2;
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(hr)) return 3;
-    std::wstring sandbox = L"Software\\yzip-menu-test-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
+    std::wstring sandbox = L"Software\\MxZip-menu-test-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
     HKEY root = nullptr;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, sandbox.c_str(), 0, nullptr, 0,
                         KEY_ALL_ACCESS, nullptr, &root, nullptr) != ERROR_SUCCESS) return 4;

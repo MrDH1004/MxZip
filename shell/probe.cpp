@@ -1,10 +1,10 @@
-// Headless probe for the yzip context-menu handler, going through the shell's own menu composition
+// Headless probe for the MxZip context-menu handler, going through the shell's own menu composition
 // (IShellFolder::GetUIObjectOf -> default context menu -> registered handlers), like Explorer does.
 // usage: probe list|defaultonly|invoke|invokedlg <path> [<path> ...]   (all paths in one folder)
 //        probe direct-list|direct-defaultonly|direct-invoke|direct-invokedlg <dll> <path> [<path> ...]
 // prints one "ITEM\t<text>\t[icon]\t<verb>" line per top-level menu item and "SEP" per separator (UTF-8);
-// "invoke" runs yzip's "<name>.zip으로 압축하기", "invokedlg" runs "yzip으로 압축하기...",
-// "invoke:<verb>" runs the item with that verb (e.g. invoke:yzip.extractfolder).
+// "invoke" runs MxZip's "<name>.zip으로 압축하기", "invokedlg" runs "MxZip으로 압축하기...",
+// "invoke:<verb>" runs the item with that verb (e.g. invoke:MxZip.extractfolder).
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
@@ -63,7 +63,7 @@ struct ComApartment {
 };
 
 struct CleanupTrace {
-    bool enabled = GetEnvironmentVariableW(L"YZIP_PROBE_TRACE_CLEANUP", nullptr, 0) != 0;
+    bool enabled = GetEnvironmentVariableW(L"MXZIP_PROBE_TRACE_CLEANUP", nullptr, 0) != 0;
     ~CleanupTrace() { if (enabled) put(L"CLEANUP"); }
 };
 
@@ -129,7 +129,7 @@ int wmain(int argc, wchar_t** argv) {
         }
         using GetClassObject = HRESULT(STDAPICALLTYPE*)(REFCLSID, REFIID, void**);
         auto get_class_object = reinterpret_cast<GetClassObject>(GetProcAddress(module.value, "DllGetClassObject"));
-        static const CLSID clsid = {0x7e3b1c52, 0x9a4d, 0x4f1e, {0xb6, 0xc2, 0x3d, 0x8a, 0x5f, 0x0e, 0x9c, 0x71}};
+        static const CLSID clsid = {0xe856c547, 0xdf4f, 0x438a, {0x93, 0x57, 0x32, 0x25, 0x75, 0x6e, 0x4d, 0x24}};
         parent_abs.value = ILCloneFull(abs.values[0]);
         if (!get_class_object || !parent_abs.value || !ILRemoveLastID(parent_abs.value))
             hr = E_FAIL;
@@ -187,14 +187,14 @@ int wmain(int argc, wchar_t** argv) {
         if ((int)mii.wID >= (int)FIRST && (int)mii.wID < 0x7FFF)
             cm->GetCommandString(mii.wID - FIRST, GCS_VERBW, nullptr, (LPSTR)verb, 128);
         put(L"ITEM\t" + std::wstring(text) + L"\t" + (mii.hbmpItem ? L"[icon]" : L"") + L"\t" + verb);
-        std::wstring want = mode == L"invokedlg" ? L"yzip.compressdlg"
-                          : mode.rfind(L"invoke:", 0) == 0 ? mode.substr(7) : L"yzip.compress";
+        std::wstring want = mode == L"invokedlg" ? L"MxZip.compressdlg"
+                          : mode.rfind(L"invoke:", 0) == 0 ? mode.substr(7) : L"MxZip.compress";
         if (lstrcmpW(verb, want.c_str()) == 0)
             target = (int)mii.wID;
     }
     if (mode.rfind(L"invoke", 0) == 0) {
         if (target < 0) {
-            put(L"ERROR no yzip item");
+            put(L"ERROR no MxZip item");
             return 4;
         }
         CMINVOKECOMMANDINFOEX ici = {sizeof(ici)};

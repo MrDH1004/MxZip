@@ -7,7 +7,7 @@
 #define YZ_ACCEL_EXPORT extern "C" __declspec(dllexport)
 #define YZ_ACCEL_CALL __cdecl
 #else
-#error yzip_accel is supported only on Windows
+#error mxzip_accel is supported only on Windows
 #endif
 
 #define YZ_ACCEL_ABI_VERSION 1U

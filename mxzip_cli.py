@@ -58,7 +58,7 @@ def build_parser():
                 return self._theme
             raise AttributeError(name)
 
-    p = argparse.ArgumentParser(prog="yzip", description="archiver: creates zip/7z/tar.*/gz/bz2/xz/zst, reads all of them",
+    p = argparse.ArgumentParser(prog="MxZip", description="archiver: creates zip/7z/tar.*/gz/bz2/xz/zst, reads all of them",
                                 formatter_class=_LazyThemeFormatter)
     p.add_argument("command", choices=["a", "c", "x", "e", "t", "l", "d", "rn"])
     p.add_argument("archive")

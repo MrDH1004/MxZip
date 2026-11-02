@@ -1,4 +1,4 @@
-"""Optional ctypes loader for yzip's native acceleration bridge."""
+"""Optional ctypes loader for MxZip's native acceleration bridge."""
 
 from __future__ import annotations
 
@@ -267,7 +267,7 @@ class Accelerator:
                     cancellation.cancel()
                     return
 
-        monitor = threading.Thread(target=poll, name="yzip-native-progress", daemon=True)
+        monitor = threading.Thread(target=poll, name="mxzip-native-progress", daemon=True)
         monitor.start()
         try:
             raw_status = int(
@@ -344,7 +344,7 @@ class Accelerator:
         total = sum(item.size for item in native_items if not item.is_dir)
         metadata_allowance = sum(len(item.archive_name.encode("utf-8")) + 1024 for item in native_items)
         output_limit = total + max(total // 100, 1 << 20) + metadata_allowance
-        test_limit = os.environ.get("YZIP_NATIVE_TEST_CREATE_LIMIT")
+        test_limit = os.environ.get("MXZIP_NATIVE_TEST_CREATE_LIMIT")
         if test_limit is not None:
             output_limit = int(test_limit)
         counters = _CNativeProgress(0, total)
@@ -366,7 +366,7 @@ class Accelerator:
                     cancellation.cancel()
                     return
 
-        monitor = threading.Thread(target=poll, name="yzip-native-create-progress", daemon=True)
+        monitor = threading.Thread(target=poll, name="mxzip-native-create-progress", daemon=True)
         monitor.start()
         try:
             raw_status = int(self._library.yz_accel_create_zip(
@@ -414,15 +414,15 @@ _disabled_reason: str | None = None
 def _default_candidates() -> tuple[Path, ...]:
     root = Path(__file__).resolve().parent
     if getattr(__import__("sys"), "frozen", False):
-        return (root / "tools" / "yzip_accel.dll",)
+        return (root / "tools" / "mxzip_accel.dll",)
     return (
-        root / "nativeaccel" / "build" / "yzip_accel.dll",
-        root / "tools" / "yzip_accel.dll",
+        root / "nativeaccel" / "build" / "mxzip_accel.dll",
+        root / "tools" / "mxzip_accel.dll",
     )
 
 
 def _default_7z_path() -> Path:
-    configured = os.environ.get("YZIP_7Z_DLL")
+    configured = os.environ.get("MXZIP_7Z_DLL")
     if configured:
         return Path(configured)
     return Path(__file__).resolve().parent / "tools" / "7z.dll"
@@ -474,8 +474,8 @@ def _validated_7z_path() -> Path | None:
 def load_accelerator(path: os.PathLike[str] | str | None = None) -> Accelerator | None:
     global _disabled_reason
 
-    if os.environ.get("YZIP_DISABLE_ACCEL") == "1":
-        _disabled_reason = "native acceleration disabled by YZIP_DISABLE_ACCEL=1"
+    if os.environ.get("MXZIP_DISABLE_ACCEL") == "1":
+        _disabled_reason = "native acceleration disabled by MXZIP_DISABLE_ACCEL=1"
         return None
 
     candidates = (Path(path),) if path is not None else _default_candidates()

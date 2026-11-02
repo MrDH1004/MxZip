@@ -201,7 +201,7 @@ class CliArchive:
             for e in chosen:                                              # mean "everything" to the tools
                 plan.target(e.name, True)
             return
-        stage = tempfile.mkdtemp(prefix="~yzip", suffix=".stage", dir=plan.root)
+        stage = tempfile.mkdtemp(prefix="~MxZip", suffix=".stage", dir=plan.root)
         try:
             try:
                 import ctypes
@@ -226,7 +226,7 @@ class CliArchive:
                     "-o" + stage, self.path]
             if names is None:
                 return argv, None
-            fd, listfile = tempfile.mkstemp(prefix="yzip_7z_", suffix=".txt")
+            fd, listfile = tempfile.mkstemp(prefix="mxzip_7z_", suffix=".txt")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write("".join(n.rstrip("/").replace("/", "\\") + "\n" for n in names))
             return argv + ["@" + listfile], listfile

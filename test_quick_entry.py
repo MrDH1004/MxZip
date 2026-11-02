@@ -1,4 +1,4 @@
-"""yzip_main: '<name>.zip으로 압축하기' starts the job before Qt loads, then every job, even a tiny one, gets the
+"""mxzip_main: '<name>.zip으로 압축하기' starts the job before Qt loads, then every job, even a tiny one, gets the
 progress window, and a failed one a message box. Each case runs in a fresh interpreter."""
 import json
 import os
@@ -11,7 +11,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 DRIVER = r'''
 import json, os, sys, time
-sys.argv = ["yzip"] + json.loads(os.environ["ARGS"])
+sys.argv = ["MxZip"] + json.loads(os.environ["ARGS"])
 shown = []
 if os.environ.get("SLOW"):  # a job of about a second
     import formats
@@ -23,21 +23,21 @@ if os.environ.get("SLOW"):  # a job of about a second
         return real(*a, **k)
     formats.create = slow
 if os.environ.get("WATCH_QT"):
-    import yzip_gui
+    import mxzip_gui
     from PySide6.QtWidgets import QMessageBox
     QMessageBox.critical = staticmethod(lambda *a, **k: shown.append(["critical", a[2]]))
     QMessageBox.warning = staticmethod(lambda *a, **k: shown.append(["warning", a[2]]))
-    orig = yzip_gui.ProgressWindow.show
-    yzip_gui.ProgressWindow.show = lambda self: (shown.append(["window", self.title]), orig(self))[1]
-    yzip_gui.finish = lambda code: None
-    done = yzip_gui.ProgressWindow.show_done
+    orig = mxzip_gui.ProgressWindow.show
+    mxzip_gui.ProgressWindow.show = lambda self: (shown.append(["window", self.title]), orig(self))[1]
+    mxzip_gui.finish = lambda code: None
+    done = mxzip_gui.ProgressWindow.show_done
     def show_done(self):  # '창을 닫지 않기': record it, then close as the user would
         shown.append(["done", self.title])
         done(self)
-        yzip_gui.QTimer.singleShot(100, self.accept)
-    yzip_gui.ProgressWindow.show_done = show_done
-import yzip_main
-yzip_main.main()
+        mxzip_gui.QTimer.singleShot(100, self.accept)
+    mxzip_gui.ProgressWindow.show_done = show_done
+import mxzip_main
+mxzip_main.main()
 print("RESULT" + json.dumps({"loaded_qt": "PySide6" in sys.modules, "shown": shown}))
 '''
 
@@ -58,7 +58,7 @@ class QuickEntryTests(unittest.TestCase):
         with open(lst, "w", encoding="utf-8") as f:
             f.write(self.src + "\n")
         e = dict(os.environ, ARGS=json.dumps(["--archive-list", lst, "--out", out]), QT_QPA_PLATFORM="offscreen",
-                 YZIP_NO_OPEN="1", YZIP_SETTINGS=os.path.join(self.root, "settings.json"), **env)
+                 MXZIP_NO_OPEN="1", MXZIP_SETTINGS=os.path.join(self.root, "settings.json"), **env)
         r = subprocess.run([sys.executable, "-W", "ignore", "-c", DRIVER], cwd=HERE, env=e, capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=60)
         line = next((ln for ln in r.stdout.splitlines() if ln.startswith("RESULT")), None)

@@ -1,4 +1,4 @@
-"""In-process EGG/ALZ adapter for the yzip-native Rust cdylib."""
+"""In-process EGG/ALZ adapter for the mxzip-native Rust cdylib."""
 from __future__ import annotations
 
 import ctypes
@@ -15,16 +15,16 @@ from ziplib import BadPassword, Cancelled, Entry
 
 
 def native_dll_path() -> str:
-    configured = os.environ.get("YZIP_NATIVE_DLL")
+    configured = os.environ.get("MXZIP_NATIVE_DLL")
     if configured:
         return configured
     here = os.path.dirname(os.path.abspath(__file__))
     bundle = os.path.abspath(getattr(sys, "_MEIPASS", here))
     candidates = (
-        os.path.join(bundle, "tools", "yzip_native.dll"),
-        os.path.join(bundle, "yzip_native.dll"),
-        os.path.join(here, "tools", "yzip_native.dll"),
-        os.path.join(here, "nativearchive", "target", "release", "yzip_native.dll"),
+        os.path.join(bundle, "tools", "mxzip_native.dll"),
+        os.path.join(bundle, "mxzip_native.dll"),
+        os.path.join(here, "tools", "mxzip_native.dll"),
+        os.path.join(here, "nativearchive", "target", "release", "mxzip_native.dll"),
     )
     for path in candidates:
         if os.path.isfile(path):
@@ -47,34 +47,34 @@ class _Native:
         path = native_dll_path()
         if not os.path.isfile(path):
             from nativearchive import NativeBackendUnavailable
-            raise NativeBackendUnavailable(f"yzip_native.dll is not bundled: {path}")
+            raise NativeBackendUnavailable(f"mxzip_native.dll is not bundled: {path}")
         try:
             loader = getattr(ctypes, "WinDLL", ctypes.CDLL)
             self.lib = loader(path)
         except OSError as exc:
             from nativearchive import NativeBackendUnavailable
-            raise NativeBackendUnavailable(f"cannot load yzip_native.dll: {path}: {exc}") from exc
-        self.lib.yzip_native_list.restype = ctypes.c_int
-        self.lib.yzip_native_list.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+            raise NativeBackendUnavailable(f"cannot load mxzip_native.dll: {path}: {exc}") from exc
+        self.lib.mxzip_native_list.restype = ctypes.c_int
+        self.lib.mxzip_native_list.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
                                               ctypes.POINTER(ctypes.c_void_p)]
-        self.lib.yzip_native_extract.restype = ctypes.c_int
-        self.lib.yzip_native_extract.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
-        self.lib.yzip_native_last_error.restype = ctypes.c_char_p
-        self.lib.yzip_native_free_string.restype = None
-        self.lib.yzip_native_free_string.argtypes = [ctypes.c_void_p]
+        self.lib.mxzip_native_extract.restype = ctypes.c_int
+        self.lib.mxzip_native_extract.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p]
+        self.lib.mxzip_native_last_error.restype = ctypes.c_char_p
+        self.lib.mxzip_native_free_string.restype = None
+        self.lib.mxzip_native_free_string.argtypes = [ctypes.c_void_p]
 
     @staticmethod
     def _text(value: str) -> bytes:
         return value.encode("utf-8")
 
     def _error(self, code: int) -> NativeLegacyError:
-        raw = self.lib.yzip_native_last_error()
+        raw = self.lib.mxzip_native_last_error()
         message = raw.decode("utf-8", "replace") if raw else "native archive operation failed"
         return NativeLegacyError(code, message)
 
     def list(self, kind: str, path: str, password: Optional[str]) -> list[dict]:
         output = ctypes.c_void_p()
-        code = self.lib.yzip_native_list(self._text(kind), self._text(path),
+        code = self.lib.mxzip_native_list(self._text(kind), self._text(path),
                                          self._text(password) if password is not None else None,
                                          ctypes.byref(output))
         if code != 0:
@@ -85,10 +85,10 @@ class _Native:
             raw = ctypes.string_at(output.value)
             return json.loads(raw.decode("utf-8"))
         finally:
-            self.lib.yzip_native_free_string(output)
+            self.lib.mxzip_native_free_string(output)
 
     def extract(self, kind: str, path: str, destination: str, password: Optional[str]):
-        code = self.lib.yzip_native_extract(self._text(kind), self._text(path), self._text(destination),
+        code = self.lib.mxzip_native_extract(self._text(kind), self._text(path), self._text(destination),
                                             self._text(password) if password is not None else None)
         if code != 0:
             raise self._error(code)
@@ -145,7 +145,7 @@ class LegacyArchive:
             raise Cancelled()
         root = os.path.realpath(dest)
         os.makedirs(root, exist_ok=True)
-        stage = tempfile.mkdtemp(prefix="~yzip", suffix=".stage", dir=root)
+        stage = tempfile.mkdtemp(prefix="~MxZip", suffix=".stage", dir=root)
         try:
             try:
                 import ctypes as _ctypes
@@ -186,7 +186,7 @@ class LegacyArchive:
     def test(self, progress=None, cancel=None) -> list[str]:
         if cancel and cancel():
             raise Cancelled()
-        stage = tempfile.mkdtemp(prefix="yzip-native-test-")
+        stage = tempfile.mkdtemp(prefix="mxzip-native-test-")
         try:
             if progress:
                 progress(0, sum(entry.size for entry in self._entries if not entry.is_dir), os.path.basename(self.path))

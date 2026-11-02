@@ -5,7 +5,7 @@ import tempfile
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 HERE = os.path.dirname(os.path.abspath(__file__))
-CLI = [sys.executable, os.path.join(HERE, "yzip_cli.py")]
+CLI = [sys.executable, os.path.join(HERE, "mxzip_cli.py")]
 
 
 def cli(*a):
@@ -48,9 +48,9 @@ with tempfile.TemporaryDirectory() as t:
     # GUI smoke
     sys.path.insert(0, HERE)
     from PySide6.QtWidgets import QApplication
-    import yzip_gui
+    import mxzip_gui
     app = QApplication([])
-    w = yzip_gui.Main()
+    w = mxzip_gui.Main()
     w.open_archive(z2)
     assert len(w.entries) >= 3 and w.tree.topLevelItemCount() >= 1, len(w.entries)  # list shows one folder level
     w.open_archive(sp + ".001")

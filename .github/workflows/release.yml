@@ -3,7 +3,7 @@ name: release
 # Builds every tagged version on a GitHub-hosted runner from the tagged source and attaches
 # the intentionally unsigned installer + its SHA-256 to the GitHub release.
 # Repository settings once SignPath has approved the project:
-#   variables: SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG (yzip), SIGNPATH_POLICY_SLUG (release-signing)
+#   variables: SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG (MxZip), SIGNPATH_POLICY_SLUG (release-signing)
 #   secret:    SIGNPATH_API_TOKEN
 on:
   push:
@@ -48,28 +48,28 @@ jobs:
       - name: Native payload sanity check
         shell: powershell
         run: |
-          $required = "tools\7z.dll", "tools\7zip-pins.json", "tools\licenses\7-Zip License.txt", "tools\libarchive.dll", "tools\yzip_accel.dll", "tools\yzip_native.dll", "tools\zpaq.exe"
+          $required = "tools\7z.dll", "tools\7zip-pins.json", "tools\licenses\7-Zip License.txt", "tools\libarchive.dll", "tools\mxzip_accel.dll", "tools\mxzip_native.dll", "tools\zpaq.exe"
           foreach ($path in $required) {
             if (-not (Test-Path $path)) { throw "missing native payload: $path" }
             $hash = (Get-FileHash $path -Algorithm SHA256).Hash.ToLower()
             Write-Output "$path $hash"
           }
-          $env:YZIP_LIBARCHIVE_DLL = (Resolve-Path "tools\libarchive.dll").Path
-          $env:YZIP_ACCEL_DLL = (Resolve-Path "tools\yzip_accel.dll").Path
-          $env:YZIP_NATIVE_DLL = (Resolve-Path "tools\yzip_native.dll").Path
-          python -c "import ctypes, os; ctypes.WinDLL(os.environ['YZIP_LIBARCHIVE_DLL']); ctypes.WinDLL(os.environ['YZIP_NATIVE_DLL']); from archive_accel import CAP_ZIP_EXTRACT, CAP_7Z_EXTRACT, CAP_ZIP_CREATE, load_accelerator; a = load_accelerator(os.environ['YZIP_ACCEL_DLL']); expected = CAP_ZIP_EXTRACT | CAP_7Z_EXTRACT | CAP_ZIP_CREATE; assert a is not None and a.capabilities & expected == expected"
+          $env:MXZIP_LIBARCHIVE_DLL = (Resolve-Path "tools\libarchive.dll").Path
+          $env:MXZIP_ACCEL_DLL = (Resolve-Path "tools\mxzip_accel.dll").Path
+          $env:MXZIP_NATIVE_DLL = (Resolve-Path "tools\mxzip_native.dll").Path
+          python -c "import ctypes, os; ctypes.WinDLL(os.environ['MXZIP_LIBARCHIVE_DLL']); ctypes.WinDLL(os.environ['MXZIP_NATIVE_DLL']); from archive_accel import CAP_ZIP_EXTRACT, CAP_7Z_EXTRACT, CAP_ZIP_CREATE, load_accelerator; a = load_accelerator(os.environ['MXZIP_ACCEL_DLL']); expected = CAP_ZIP_EXTRACT | CAP_7Z_EXTRACT | CAP_ZIP_CREATE; assert a is not None and a.capabilities & expected == expected"
           if ((Get-Item "tools\zpaq.exe").Length -lt 100000) { throw "zpaq.exe is unexpectedly small" }
 
       - name: Tests
         env:
           QT_QPA_PLATFORM: offscreen
-          YZIP_NO_UPDATE: "1"
+          MXZIP_NO_UPDATE: "1"
         run: python -W ignore -m unittest test_release_version test_ziprepair test_ziplib test_zipwriter test_formats test_nativearchive test_moreformats test_updater test_archive_accel test_zip_native test_7z_native test_zip_compress_native test_zip_extract_perf test_seven_io_performance test_zipwriter_performance test_package_native test_hard_exit test_sevenzip_header
 
       - name: Preferences tests
         env:
           QT_QPA_PLATFORM: offscreen
-          YZIP_NO_UPDATE: "1"
+          MXZIP_NO_UPDATE: "1"
         run: |
           foreach ($suite in @('test_settings_core', 'test_preferences', 'test_settings_flows', 'test_appearance', 'test_shell_settings', 'test_ui_renewal')) {
             python -W ignore -m unittest $suite
@@ -83,21 +83,21 @@ jobs:
       - name: Packaged native accelerator and EXE smoke
         shell: powershell
         run: |
-          $accel = @(Get-ChildItem dist\yzip -Recurse -Filter yzip_accel.dll)
-          $pins = @(Get-ChildItem dist\yzip -Recurse -Filter 7zip-pins.json)
-          $runtime = @(Get-ChildItem dist\yzip -Recurse -Filter 7z.dll)
-          $license = @(Get-ChildItem dist\yzip -Recurse -Filter "7-Zip License.txt")
+          $accel = @(Get-ChildItem dist\MxZip -Recurse -Filter mxzip_accel.dll)
+          $pins = @(Get-ChildItem dist\MxZip -Recurse -Filter 7zip-pins.json)
+          $runtime = @(Get-ChildItem dist\MxZip -Recurse -Filter 7z.dll)
+          $license = @(Get-ChildItem dist\MxZip -Recurse -Filter "7-Zip License.txt")
           if ($accel.Count -ne 1 -or $pins.Count -ne 1 -or $runtime.Count -ne 1 -or $license.Count -ne 1) {
             throw "packaged native accelerator payload is incomplete"
           }
           python .\packaged_native_smoke.py
-          $marker = Join-Path $env:RUNNER_TEMP "yzip-version-smoke.txt"
-          $env:YZIP_UPDATE_TEST_MARKER = $marker
-          $env:YZIP_NO_UPDATE = "1"
-          $smoke = Start-Process .\dist\yzip\yzip.exe -ArgumentList "--updated" -Wait -PassThru -WindowStyle Hidden
-          if ($smoke.ExitCode) { throw "packaged yzip.exe smoke failed (exit $($smoke.ExitCode))" }
+          $marker = Join-Path $env:RUNNER_TEMP "MxZip-version-smoke.txt"
+          $env:MXZIP_UPDATE_TEST_MARKER = $marker
+          $env:MXZIP_NO_UPDATE = "1"
+          $smoke = Start-Process .\dist\MxZip\MxZip.exe -ArgumentList "--updated" -Wait -PassThru -WindowStyle Hidden
+          if ($smoke.ExitCode) { throw "packaged MxZip.exe smoke failed (exit $($smoke.ExitCode))" }
           $expected = python -c "import version; print(version.__version__)"
-          if ((Get-Content -Raw $marker) -ne $expected) { throw "packaged yzip.exe version smoke mismatch" }
+          if ((Get-Content -Raw $marker) -ne $expected) { throw "packaged MxZip.exe version smoke mismatch" }
 
       - name: Native menu preferences tests
         shell: powershell
@@ -115,8 +115,8 @@ jobs:
         id: upload-app
         uses: actions/upload-artifact@v4
         with:
-          name: yzip-app
-          path: dist/yzip/
+          name: MxZip-app
+          path: dist/MxZip/
 
       - name: Sign app (SignPath)
         if: env.SIGN == 'true'
@@ -129,15 +129,15 @@ jobs:
           artifact-configuration-slug: app
           github-artifact-id: ${{ steps.upload-app.outputs.artifact-id }}
           wait-for-completion: true
-          output-artifact-directory: dist/yzip-signed
+          output-artifact-directory: dist/MxZip-signed
 
       - name: Use the signed app
         if: env.SIGN == 'true'
         shell: powershell
         run: |
-          Remove-Item -Recurse -Force dist\yzip
-          Move-Item dist\yzip-signed dist\yzip
-          (Get-AuthenticodeSignature dist\yzip\yzip.exe).Status
+          Remove-Item -Recurse -Force dist\MxZip
+          Move-Item dist\MxZip-signed dist\MxZip
+          (Get-AuthenticodeSignature dist\MxZip\MxZip.exe).Status
 
       - name: Build installer
         shell: powershell

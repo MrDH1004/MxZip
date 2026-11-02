@@ -33,9 +33,9 @@ New-Item -ItemType Directory -Force $OutputDirectory | Out-Null
 $outputDirectoryFull = [IO.Path]::GetFullPath($OutputDirectory)
 $intermediate = Join-Path $PSScriptRoot "build"
 New-Item -ItemType Directory -Force $intermediate | Out-Null
-$builtDll = Join-Path $intermediate "yzip_accel.dll"
-$output = Join-Path $outputDirectoryFull "yzip_accel.dll"
-$source = Join-Path $PSScriptRoot "yzip_accel.cpp"
+$builtDll = Join-Path $intermediate "mxzip_accel.dll"
+$output = Join-Path $outputDirectoryFull "mxzip_accel.dll"
+$source = Join-Path $PSScriptRoot "mxzip_accel.cpp"
 $sdkRoot = Join-Path $tools "7zip-src"
 $crcSource = Join-Path $sdkRoot "C\7zCrc.c"
 $crcOptSource = Join-Path $sdkRoot "C\7zCrcOpt.c"

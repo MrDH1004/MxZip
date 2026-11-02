@@ -561,9 +561,9 @@ def apply_appearance(app: QApplication) -> AppearanceController | None:
     if QThread.currentThread() != app.thread():
         QTimer.singleShot(0, app, lambda: apply_appearance(app))
         return None
-    controller = getattr(app, "_yzip_appearance", None)
+    controller = getattr(app, "_mxzip_appearance", None)
     if controller is None:
         controller = AppearanceController(app)
-        app._yzip_appearance = controller
+        app._mxzip_appearance = controller
     controller.reload()
     return controller

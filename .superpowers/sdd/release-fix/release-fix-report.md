@@ -2,26 +2,26 @@
 
 ## Scope
 
-- Worktree: `E:\AIWork\yzip\.worktrees\native-performance`
+- Worktree: `E:\AIWork\MxZip\.worktrees\native-performance`
 - Starting HEAD: `320f755f71779d77a9fd4672ee70074b50b13f1d`
 - Failed run: `40799282781`, step `Packaged Explorer verb smoke`
 - Forbidden files were not edited or staged by this task: `nativeaccel/**`, `archive_accel.py`, `formats.py`, `test_7z_native.py`.
 
 ## Observed failure
 
-The CI log showed that packaged `yzip.exe --register-shell` returned zero and the smoke could read:
+The CI log showed that packaged `MxZip.exe --register-shell` returned zero and the smoke could read:
 
 - `HKCU\Software\Classes\CLSID\{7E3B1C52-9A4D-4F1E-B6C2-3D8A5F0E9C71}\InprocServer32`
 - the copied shell DLL outside `dist`
-- `HKCU\Software\yzip\Command` pointing at the packaged executable
+- `HKCU\Software\MxZip\Command` pointing at the packaged executable
 
-Static verbs were removed as intended. The first failure occurred only when `probe.exe` asked the hosted runner's default shell menu through `IShellFolder::GetUIObjectOf`. That menu contained built-in and other preinstalled handlers but no yzip verbs. Every later menu/invocation failure followed from the same missing enumeration. There was no observation that `yzipshell.dll` had been loaded or that its `QueryContextMenu` failed.
+Static verbs were removed as intended. The first failure occurred only when `probe.exe` asked the hosted runner's default shell menu through `IShellFolder::GetUIObjectOf`. That menu contained built-in and other preinstalled handlers but no MxZip verbs. Every later menu/invocation failure followed from the same missing enumeration. There was no observation that `mxzipshell.dll` had been loaded or that its `QueryContextMenu` failed.
 
 ## Root cause
 
 The smoke coupled two independent assertions:
 
-1. yzip wrote the COM and context-menu handler registration correctly.
+1. MxZip wrote the COM and context-menu handler registration correctly.
 2. the GitHub-hosted runner's non-interactive Explorer/default-shell menu immediately discovered and loaded a newly registered in-process HKCU extension.
 
 The second assertion is an environment-dependent Explorer integration check and is not a reliable hosted-runner precondition. Treating its absence as a product-DLL failure produced the 30/50 result. The registration itself still needed stronger value checks; an exit code alone was insufficient.
@@ -92,4 +92,4 @@ PASS direct DLL context-menu probe
 PASS RPC_E_CHANGED_MODE contract and negative cleanup probes
 ```
 
-The negative cases cover an incompatible MTA-to-STA initialization and a missing DLL. `YZIP_PROBE_TRACE_CLEANUP=1` emits `CLEANUP` from the outer scope guard after inner resource destructors have run, providing observable coverage of early-return cleanup within the probe's testable process boundary.
+The negative cases cover an incompatible MTA-to-STA initialization and a missing DLL. `MXZIP_PROBE_TRACE_CLEANUP=1` emits `CLEANUP` from the outer scope guard after inner resource destructors have run, providing observable coverage of early-return cleanup within the probe's testable process boundary.

@@ -2,14 +2,14 @@
 # 개인 키는 Windows 인증서 저장소(CurrentUser\My)에만 있고 파일로 내보내지 않습니다.
 # Root 저장소에 추가할 때 Windows가 확인 창을 띄웁니다("예"를 눌러야 함).
 $ErrorActionPreference = "Stop"
-$subject = "CN=yzip (self-signed test)"
+$subject = "CN=MxZip (self-signed test)"
 $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subject -eq $subject | Select-Object -First 1
 if (-not $cert) {
     $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject $subject -CertStoreLocation Cert:\CurrentUser\My `
         -KeyAlgorithm RSA -KeyLength 3072 -HashAlgorithm SHA256 -NotAfter (Get-Date).AddYears(5)
     Write-Output "인증서 생성: $($cert.Thumbprint)"
 }
-$pub = Join-Path $env:TEMP "yzip_signing_public.cer"   # 공개 인증서만 (개인 키 없음)
+$pub = Join-Path $env:TEMP "mxzip_signing_public.cer"   # 공개 인증서만 (개인 키 없음)
 Export-Certificate -Cert $cert -FilePath $pub | Out-Null
 foreach ($store in "Root", "TrustedPublisher") {
     $have = Get-ChildItem "Cert:\CurrentUser\$store" | Where-Object Thumbprint -eq $cert.Thumbprint

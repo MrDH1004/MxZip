@@ -25,9 +25,9 @@ def write_version_resources(root: pathlib.Path, value: str) -> None:
       StringStruct('CompanyName', 'YMX'),
       StringStruct('FileDescription', 'MxZip archiver'),
       StringStruct('FileVersion', '{value}'),
-      StringStruct('InternalName', 'yzip'),
+      StringStruct('InternalName', 'MxZip'),
       StringStruct('LegalCopyright', 'Copyright (c) 2026 MrDH1004. MIT License.'),
-      StringStruct('OriginalFilename', 'yzip.exe'),
+      StringStruct('OriginalFilename', 'MxZip.exe'),
       StringStruct('ProductName', 'MxZip'),
       StringStruct('ProductVersion', '{value}')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])

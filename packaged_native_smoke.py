@@ -1,4 +1,4 @@
-"""Exercise the packaged native ZIP bridge against its bundled pinned runtime without installing yzip."""
+"""Exercise the packaged native ZIP bridge against its bundled pinned runtime without installing MxZip."""
 from __future__ import annotations
 
 import hashlib
@@ -26,7 +26,7 @@ class PackagedPayload:
 
 def validate_packaged_payload(tools: Path) -> PackagedPayload:
     payload = PackagedPayload(
-        accelerator_dll=tools / "yzip_accel.dll",
+        accelerator_dll=tools / "mxzip_accel.dll",
         runtime_dll=tools / "7z.dll",
         manifest_path=tools / "7zip-pins.json",
         license_path=tools / "licenses" / "7-Zip License.txt",
@@ -50,7 +50,7 @@ def validate_packaged_payload(tools: Path) -> PackagedPayload:
 
 
 def main() -> int:
-    tools = Path(__file__).resolve().parent / "dist" / "yzip" / "_internal" / "tools"
+    tools = Path(__file__).resolve().parent / "dist" / "MxZip" / "_internal" / "tools"
     payload = validate_packaged_payload(tools)
     accelerator_dll = payload.accelerator_dll
     runtime_dll = payload.runtime_dll
@@ -70,7 +70,7 @@ def main() -> int:
             raise RuntimeError(archive_accel.disabled_reason() or "packaged accelerator unavailable")
         if accelerator.capabilities & expected_capabilities != expected_capabilities:
             raise RuntimeError(f"packaged accelerator capability mismatch: {accelerator.capabilities:#x}")
-        with tempfile.TemporaryDirectory(prefix="yzip-packaged-native-") as folder:
+        with tempfile.TemporaryDirectory(prefix="MxZip-packaged-native-") as folder:
             root = Path(folder)
             source = root / "source.zip"
             staging = root / "payload.part"
@@ -88,14 +88,14 @@ def main() -> int:
                 raise RuntimeError("packaged native extraction content mismatch")
 
     environment = os.environ.copy()
-    environment["YZIP_DISABLE_ACCEL"] = "1"
+    environment["MXZIP_DISABLE_ACCEL"] = "1"
     disabled = subprocess.run(
         [
             sys.executable,
             "-c",
             "import archive_accel, pathlib; "
             f"assert archive_accel.load_accelerator(pathlib.Path({str(accelerator_dll)!r})) is None; "
-            "assert 'YZIP_DISABLE_ACCEL=1' in archive_accel.disabled_reason()",
+            "assert 'MXZIP_DISABLE_ACCEL=1' in archive_accel.disabled_reason()",
         ],
         cwd=Path(__file__).resolve().parent,
         env=environment,

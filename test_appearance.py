@@ -31,7 +31,7 @@ class AppearanceTests(unittest.TestCase):
                     QFontDatabase.addApplicationFont(str(path))
         # Import before per-test settings mocks so GUI's imported load_settings
         # reference never outlives a temporary mock.
-        import yzip_gui  # noqa: F401
+        import mxzip_gui  # noqa: F401
 
     def setUp(self):
         self.settings = {"language": "ko", "theme": "light", "font_family": "Arial", "font_size": 10}
@@ -241,14 +241,14 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(self.controller.thread(), self.app.thread())
 
     def test_version_and_payload_translations(self):
-        self.assertEqual(translate_text("새 버전 <b>yzip 2.7</b>이(가) 나왔습니다. 지금 버전: 2.6"),
-                         "New version <b>yzip 2.7</b> is available. Current version: 2.6")
+        self.assertEqual(translate_text("새 버전 <b>MxZip 2.7</b>이(가) 나왔습니다. 지금 버전: 2.6"),
+                         "New version <b>MxZip 2.7</b> is available. Current version: 2.6")
         self.assertEqual(translate_text("압축하기 환경설정.zip"), "Compressing 환경설정.zip")
         self.assertEqual(translate_text("100% 압축 푸는 중... - MxZip"), "100% Extracting... - MxZip")
         self.assertEqual(translate_text("C:/환경설정/닫기.zip"), "C:/환경설정/닫기.zip")
 
     def test_actual_main_preferences_compress_extract_progress(self):
-        import yzip_gui as gui
+        import mxzip_gui as gui
         from preferences import PreferencesDialog
         with patch.object(gui.Main, "start_update_check"), patch("assoc.status", return_value={}), \
                 patch("assoc.enabled", return_value=False):
@@ -283,7 +283,7 @@ class AppearanceTests(unittest.TestCase):
         self.assertEqual(preferences.tabs.tabText(0), "일반")
         self.assertEqual(preferences.values(), original_values)
         # Optional reviewable snapshots, still entirely offscreen.
-        output = os.environ.get("YZIP_APPEARANCE_SNAPSHOTS")
+        output = os.environ.get("MXZIP_APPEARANCE_SNAPSHOTS")
         if output:
             folder = Path(output)
             folder.mkdir(parents=True, exist_ok=True)

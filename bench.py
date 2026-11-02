@@ -1,5 +1,5 @@
-"""Compare yzip against the third-party archiver's CLI on identical data: compress time, extract time, archive size.
-Usage: python bench.py [yzip-cli-args-suffix]   (both tools use deflate, level 5, no password)"""
+"""Compare MxZip against the third-party archiver's CLI on identical data: compress time, extract time, archive size.
+Usage: python bench.py [MxZip-cli-args-suffix]   (both tools use deflate, level 5, no password)"""
 import os
 import random
 import shutil
@@ -9,8 +9,8 @@ import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
-YZIP = [sys.executable, "-W", "ignore", os.path.join(HERE, "yzip_cli.py")]
+BZ = os.environ.get("MXZIP_REF_ARCHIVER", "")
+MXZIP = [sys.executable, "-W", "ignore", os.path.join(HERE, "mxzip_cli.py")]
 LEVEL = os.environ.get("BENCH_LEVEL", "5")
 
 
@@ -31,7 +31,7 @@ def make_big(d):
 
 def make_small(d):
     """Many small files: copy of the rea repo sources (no .git)."""
-    src = os.environ.get("YZIP_SMALL_SRC") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rea")
+    src = os.environ.get("MXZIP_SMALL_SRC") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rea")
     shutil.copytree(src, d, ignore=shutil.ignore_patterns(".git", "node_modules"))
 
 
@@ -55,8 +55,8 @@ def bench(name, src):
     for tool, mk, ex in (
         ("reference", lambda z: [BZ, "c", "-fmt:zip", f"-l:{LEVEL}", "-y", z, src],
          lambda z, o: [BZ, "x", "-y", f"-o:{o}", z]),
-        ("yzip", lambda z: YZIP + ["c", z, src, "-l", LEVEL],
-         lambda z, o: YZIP + ["x", z, "-o", o]),
+        ("MxZip", lambda z: MXZIP + ["c", z, src, "-l", LEVEL],
+         lambda z, o: MXZIP + ["x", z, "-o", o]),
     ):
         with tempfile.TemporaryDirectory(prefix="yzb_") as t:
             z = os.path.join(t, "a.zip")

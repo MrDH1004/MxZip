@@ -25,7 +25,7 @@ import zipwriter
 
 class ZipPipelineTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="yzip-zip-pipeline-")
+        self.temp = tempfile.TemporaryDirectory(prefix="MxZip-zip-pipeline-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.output = self.root / "result.zip"
@@ -186,7 +186,7 @@ def benchmark(data_root, runs):
                       "scope": "write_zip only; sequential alternating variants; CRC/hash validation excluded"}),
           flush=True)
     results = []
-    with tempfile.TemporaryDirectory(prefix="yzip-zip-benchmark-") as temp:
+    with tempfile.TemporaryDirectory(prefix="MxZip-zip-benchmark-") as temp:
         for dataset in ("small", "text", "random"):
             directory = Path(data_root) / dataset
             items = ziplib.collect_items([str(directory)])

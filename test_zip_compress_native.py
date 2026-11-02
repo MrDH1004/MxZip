@@ -65,7 +65,7 @@ class NativeZipCompressionTests(unittest.TestCase):
         self.temp.cleanup()
 
     def _create(self, accelerator, **kwargs):
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
              mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
             return ziplib.create_zip([str(self.source)], str(self.output), level=5, **kwargs)
 
@@ -93,7 +93,7 @@ class NativeZipCompressionTests(unittest.TestCase):
         accelerator = RecordingZipCreator()
         with mock.patch.dict(os.environ, {}, clear=False), \
              mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
-            os.environ.pop("YZIP_NATIVE_ZIP_CREATE", None)
+            os.environ.pop("MXZIP_NATIVE_ZIP_CREATE", None)
             ziplib.create_zip([str(self.source)], str(self.output), level=5)
         self.assertEqual([], accelerator.calls)
         with zipfile.ZipFile(self.output) as archive:
@@ -101,7 +101,7 @@ class NativeZipCompressionTests(unittest.TestCase):
 
     def test_global_kill_switch_overrides_native_create_opt_in(self):
         with mock.patch.dict(os.environ, {
-            "YZIP_NATIVE_ZIP_CREATE": "1", "YZIP_DISABLE_ACCEL": "1",
+            "MXZIP_NATIVE_ZIP_CREATE": "1", "MXZIP_DISABLE_ACCEL": "1",
         }, clear=False), mock.patch.object(
             zipwriter, "load_accelerator", wraps=archive_accel.load_accelerator
         ), mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
@@ -116,7 +116,7 @@ class NativeZipCompressionTests(unittest.TestCase):
         self.assertEqual([], accelerator.calls)
 
         self.output.unlink()
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
              mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
             parts = ziplib.create_zip(
                 [str(self.source)], str(self.output), level=5, split_size=256
@@ -129,7 +129,7 @@ class NativeZipCompressionTests(unittest.TestCase):
         with zipfile.ZipFile(existing) as opened:
             keep = [(opened.infolist()[0], "renamed.txt")]
             part = self.root / "copy.part"
-            with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
+            with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
                  mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
                 zipwriter.write_zip([], str(part), copy=(str(existing), keep))
         self.assertEqual([], accelerator.calls)
@@ -143,7 +143,7 @@ class NativeZipCompressionTests(unittest.TestCase):
 
     def test_empty_archive_uses_existing_writer(self):
         accelerator = RecordingZipCreator()
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}), \
              mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
             zipwriter.write_zip([], str(self.output), level=5)
         self.assertEqual([], accelerator.calls)
@@ -202,7 +202,7 @@ class NativeZipCompressionTests(unittest.TestCase):
             os.utime(source, ns=(original_mtime, original_mtime))
             return accelerator
 
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}), \
              mock.patch.object(zipwriter, "load_accelerator", side_effect=mutate_after_snapshot):
             with self.assertRaisesRegex(ValueError, "changed"):
                 ziplib.create_zip([str(self.source)], str(self.output), level=5)
@@ -219,7 +219,7 @@ class NativeZipCompressionTests(unittest.TestCase):
             st_mtime_ns=stat.st_mtime_ns,
         )
         metadata = [(str(source), "huge.bin", huge)]
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}), \
              mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
             selected = zipwriter._try_native_zip(
                 metadata, str(self.output), 5, 1, None, None, None, None, True
@@ -236,7 +236,7 @@ class NativeZipCompressionTests(unittest.TestCase):
         except OSError as error:
             self.skipTest(f"symlink unavailable: {error}")
         accelerator = RecordingZipCreator()
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}, clear=False), \
              mock.patch.object(zipwriter, "load_accelerator", return_value=accelerator):
             ziplib.create_zip([str(link)], str(self.output), level=5)
         self.assertEqual([], accelerator.calls)
@@ -266,7 +266,7 @@ class NativeZipCreateBindingTests(unittest.TestCase):
 class BuiltNativeZipCreateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.dll = Path("nativeaccel/build/yzip_accel.dll").resolve()
+        cls.dll = Path("nativeaccel/build/mxzip_accel.dll").resolve()
         if not cls.dll.exists():
             raise unittest.SkipTest("native DLL must be built")
         cls.accelerator = archive_accel.load_accelerator(cls.dll)
@@ -333,7 +333,7 @@ class BuiltNativeZipCreateTests(unittest.TestCase):
         source = self.root / "limit.bin"
         source.write_bytes(os.urandom(64 * 1024))
         output = self.root / "limited.zip"
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_TEST_CREATE_LIMIT": "32"}):
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_TEST_CREATE_LIMIT": "32"}):
             result = self.accelerator.create_zip(
                 [self._item(source, "limit.bin")], output, 5, 1, None, None,
             )
@@ -371,7 +371,7 @@ class BuiltNativeZipCreateTests(unittest.TestCase):
             def last_error():
                 return accelerator.last_error()
 
-        with mock.patch.dict(os.environ, {"YZIP_NATIVE_ZIP_CREATE": "1"}), \
+        with mock.patch.dict(os.environ, {"MXZIP_NATIVE_ZIP_CREATE": "1"}), \
              mock.patch.object(zipwriter, "load_accelerator", return_value=MutatingAccelerator()):
             with self.assertRaisesRegex(ValueError, "changed"):
                 zipwriter._try_native_zip(
@@ -460,13 +460,13 @@ class Task5BenchmarkEvidenceTests(unittest.TestCase):
         python_run = dict(valid_run, actual_selection="python")
         reference_run = dict(valid_run, actual_selection="reference")
         report = {"results": [{"tools": {
-            "native-yzip": {"runs": [native_run]},
-            "existing-yzip": {"runs": [python_run]},
+            "native-MxZip": {"runs": [native_run]},
+            "existing-MxZip": {"runs": [python_run]},
             "reference": {"runs": [reference_run]},
         }}]}
         self.benchmark.validate_evidence(report)
         fallback = json.loads(json.dumps(report))
-        fallback["results"][0]["tools"]["native-yzip"]["runs"][0]["actual_selection"] = "python"
+        fallback["results"][0]["tools"]["native-MxZip"]["runs"][0]["actual_selection"] = "python"
         with self.assertRaisesRegex(RuntimeError, "fallback"):
             self.benchmark.validate_evidence(fallback)
 

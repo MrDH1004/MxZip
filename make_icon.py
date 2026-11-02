@@ -1,4 +1,4 @@
-"""Generate the MxZip app icon (yzip.ico) with Pillow only.
+"""Generate the MxZip app icon (MxZip.ico) with Pillow only.
 
 The mark is YMX's chevron cube in the logo's own colours (traced from ymx.co.kr/media/logo-dark.png) on a white
 tile: yellow diamond, sky-to-blue upper chevron, blue side bar, navy lower chevron. A zipper closes the gap
@@ -109,7 +109,7 @@ def write_preview(path: Path, images):
 
 def main():
     images = [render(size) for size in SIZES]
-    write_ico(HERE / "yzip.ico", images)  # file name kept: build.ps1, the installer and the GUI load it by name
+    write_ico(HERE / "MxZip.ico", images)  # file name kept: build.ps1, the installer and the GUI load it by name
     if len(sys.argv) > 1:
         write_preview(Path(sys.argv[1]), images)
 

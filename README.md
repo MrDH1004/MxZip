@@ -1,6 +1,6 @@
 # MxZip
 
-YMX의 Windows 압축 프로그램 (이전 이름: yzip).
+YMX의 Windows 압축 프로그램 (이전 이름: MxZip).
 
 가볍고 빠른 Windows 압축 프로그램 (Python · PySide6).
 
@@ -13,7 +13,7 @@ YMX의 Windows 압축 프로그램 (이전 이름: yzip).
   Windows 11에서는 "더 많은 옵션 표시"(Shift+F10) 안에 있습니다.
 - **작업 화면**: 홈에서 열기·압축을 시작하고, 대표 지원 형식과 생성 가능한 형식을 구분해 확인합니다.
   압축 파일 안에서는 현재 폴더의 파일 이름을 검색하고, 설정·업데이트·홈 이동을 바로 사용할 수 있습니다.
-- **자동 업데이트**: yzip을 실행할 때(일반 실행 또는 압축 파일 실행) GitHub 릴리스를 확인하고, 새 버전이 있으면 팝업으로 알립니다. 사용자가 동의할 때만
+- **자동 업데이트**: MxZip을 실행할 때(일반 실행 또는 압축 파일 실행) GitHub 릴리스를 확인하고, 새 버전이 있으면 팝업으로 알립니다. 사용자가 동의할 때만
   SHA-256을 검증한 설치 파일을 내려받아 업데이트합니다.
 
 ## 설치
@@ -61,9 +61,9 @@ ZIP을 연 뒤 **더 보기 > 손상된 ZIP 복구…**를 선택합니다. 중�
 
 ## 개인정보 처리 방침
 
-yzip은 다음 한 가지 경우를 빼고는 사용자가 요청하지 않는 한 어떤 정보도 네트워크로 보내지 않습니다.
+MxZip은 다음 한 가지 경우를 빼고는 사용자가 요청하지 않는 한 어떤 정보도 네트워크로 보내지 않습니다.
 
-- **업데이트 확인**: "업데이트 자동 확인"이 켜져 있으면 yzip을 실행할 때마다
+- **업데이트 확인**: "업데이트 자동 확인"이 켜져 있으면 MxZip을 실행할 때마다
   `api.github.com`에서 최신 릴리스 정보를 받아 옵니다. 일반 HTTPS 요청 정보(IP 주소, 프로그램 버전이 담긴
   User-Agent)만 전달되고, 파일 이름·압축 내용·사용 기록은 보내지 않습니다. 이 요청에는
   [GitHub 개인정보 처리 방침](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement)이 적용됩니다.
@@ -72,7 +72,7 @@ yzip은 다음 한 가지 경우를 빼고는 사용자가 요청하지 않는 �
 
 ## 제거
 
-설정 > 앱 > 설치된 앱 > yzip > 제거. 우클릭 메뉴와 파일 연결도 함께 원래대로 돌아갑니다.
+설정 > 앱 > 설치된 앱 > MxZip > 제거. 우클릭 메뉴와 파일 연결도 함께 원래대로 돌아갑니다.
 
 ## 라이선스
 
@@ -92,12 +92,12 @@ python run_headless_tests.py                          # 화면 없이 전체 테
 ## Native archive support
 
 RAR/RAR5, ISO/UDF, CAB, LHA, CPIO, RPM and DEB are read in-process through the bundled libarchive DLL.
-EGG and ALZ are read in-process through the bundled Rust module (`yzip_native.dll`, embedding `unegg` and `unalz`).
+EGG and ALZ are read in-process through the bundled Rust module (`mxzip_native.dll`, embedding `unegg` and `unalz`).
 RAR, EGG and ALZ remain extraction-only; archive creation is not advertised for those formats. Encrypted RAR is detected and rejected safely because the bundled reader does not implement RAR decryption.
 
 ZPAQ is read, tested and extracted through the bundled x64 `zpaq.exe` compatibility reader. ZIP/7Z self-extracting EXE files are accepted only when an archive signature is found inside the executable; ordinary EXE files are rejected.
 The remaining 7-Zip-only formats use the bundled 7-Zip compatibility reader until a dedicated in-process backend is added.
 
-Plain ZIP extraction, plain LZMA/LZMA2 7z extraction, and new plain ZIP creation also have an optional in-process accelerator (`yzip_accel.dll`) backed by the bundled, SHA-256-pinned official 7-Zip 26.04 `7z.dll`. Benchmark gates did not justify enabling these paths by default, so they remain diagnostic opt-ins through `YZIP_NATIVE_ZIP_EXTRACT=1`, `YZIP_NATIVE_7Z_EXTRACT=1`, and `YZIP_NATIVE_ZIP_CREATE=1`. Unsupported methods, encryption, split archives, unavailable or mismatched DLLs, and other ineligible operations use the existing Python implementation for the whole operation.
+Plain ZIP extraction, plain LZMA/LZMA2 7z extraction, and new plain ZIP creation also have an optional in-process accelerator (`mxzip_accel.dll`) backed by the bundled, SHA-256-pinned official 7-Zip 26.04 `7z.dll`. Benchmark gates did not justify enabling these paths by default, so they remain diagnostic opt-ins through `MXZIP_NATIVE_ZIP_EXTRACT=1`, `MXZIP_NATIVE_7Z_EXTRACT=1`, and `MXZIP_NATIVE_ZIP_CREATE=1`. Unsupported methods, encryption, split archives, unavailable or mismatched DLLs, and other ineligible operations use the existing Python implementation for the whole operation.
 
-Set `YZIP_DISABLE_ACCEL=1` to disable every `yzip_accel.dll` capability even when one or more opt-in variables are set. Bundled third-party notices, including `7-Zip License.txt`, are installed under `_internal/tools/licenses`.
+Set `MXZIP_DISABLE_ACCEL=1` to disable every `mxzip_accel.dll` capability even when one or more opt-in variables are set. Bundled third-party notices, including `7-Zip License.txt`, are installed under `_internal/tools/licenses`.

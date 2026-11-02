@@ -15,8 +15,8 @@ ROOT = pathlib.Path(__file__).resolve().parent
 
 
 class ReleaseVersionContractTests(unittest.TestCase):
-    def test_100_is_the_single_release_version(self):
-        self.assertEqual("1.0.0", version.__version__)
+    def test_101_is_the_single_release_version(self):
+        self.assertEqual("1.0.1", version.__version__)
         notes = ROOT / ".github" / f"release-notes-{version.__version__}.md"
         self.assertTrue(notes.is_file(), notes)
         self.assertEqual(f"# MxZip {version.__version__}", notes.read_text(encoding="utf-8").splitlines()[0])
@@ -44,7 +44,7 @@ class ReleaseVersionContractTests(unittest.TestCase):
     def test_installer_contract_expands_app_version_and_output_filename(self):
         from version_contract import installer_setup_contract
 
-        contract = installer_setup_contract(ROOT / "installer" / "yzip.iss", version.__version__)
+        contract = installer_setup_contract(ROOT / "installer" / "MxZip.iss", version.__version__)
         self.assertEqual(version.__version__, contract["AppVersion"])
         self.assertEqual(f"MxZip {version.__version__}", contract["AppVerName"])
         self.assertEqual(version.__version__, contract["VersionInfoVersion"])

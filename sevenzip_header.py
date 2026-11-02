@@ -256,7 +256,7 @@ def _plain_chain(f: dict):
         if f["pairs"] != [(1, 0)]:  # bind pair (in 1, out 0): the codec (coder 1) reads AES's (coder 0) output
             raise Unsupported("aes chain")
         aes, c = f["coders"][0]["props"], f["coders"][1]
-    elif ids == [_ID_AES]:  # AES alone (yzip's encrypted header): the plaintext is stored
+    elif ids == [_ID_AES]:  # AES alone (MxZip's encrypted header): the plaintext is stored
         return f["coders"][0]["props"], "copy", b""
     elif len(ids) == 1:
         aes, c = None, f["coders"][0]

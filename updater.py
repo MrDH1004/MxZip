@@ -1,9 +1,9 @@
 """Update check against the GitHub latest-release API (public repo, no token).
 
 A release carries MxZip-setup-X.Y.Z.exe and MxZip-setup-X.Y.Z.exe.sha256. The installer is downloaded to a temp
-folder, checked against that SHA-256 and started silently; it closes yzip, installs, re-registers the Explorer
-menu and starts the new version with --updated. YZIP_UPDATE_URL points the check at another URL (tests use a
-local server); YZIP_NO_UPDATE turns automatic checks off."""
+folder, checked against that SHA-256 and started silently; it closes MxZip, installs, re-registers the Explorer
+menu and starts the new version with --updated. MXZIP_UPDATE_URL points the check at another URL (tests use a
+local server); MXZIP_NO_UPDATE turns automatic checks off."""
 from __future__ import annotations
 
 import hashlib
@@ -19,9 +19,9 @@ from typing import Callable, Optional
 
 from version import REPO, __version__
 
-UA = f"yzip/{__version__} (+https://github.com/{REPO})"
+UA = f"MxZip/{__version__} (+https://github.com/{REPO})"
 def api_url() -> str:
-    return os.environ.get("YZIP_UPDATE_URL") or f"https://api.github.com/repos/{REPO}/releases/latest"
+    return os.environ.get("MXZIP_UPDATE_URL") or f"https://api.github.com/repos/{REPO}/releases/latest"
 
 
 def parse_version(s: str) -> tuple:
@@ -70,7 +70,7 @@ def download(rel: Release, progress: Optional[Callable[[int, int, str], None]] =
     want = words[0].lower() if words else ""
     if not re.fullmatch(r"[0-9a-f]{64}", want):
         raise ValueError("업데이트 파일의 체크섬 형식이 올바르지 않습니다.")
-    folder = tempfile.mkdtemp(prefix="yzip_update_")
+    folder = tempfile.mkdtemp(prefix="mxzip_update_")
     path = os.path.join(folder, rel.name)
     req = urllib.request.Request(rel.url, headers={"User-Agent": UA})
     h = hashlib.sha256()
@@ -103,4 +103,4 @@ def launch_installer(path: str) -> None:
 
 def due(settings: dict) -> bool:
     """Whether automatic checking is enabled for the current app launch."""
-    return not os.environ.get("YZIP_NO_UPDATE") and bool(settings.get("auto_update", True))
+    return not os.environ.get("MXZIP_NO_UPDATE") and bool(settings.get("auto_update", True))

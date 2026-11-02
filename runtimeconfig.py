@@ -1,4 +1,4 @@
-"""Engine runtime limits and leased yzip-only temporary workspaces (no appcore import)."""
+"""Engine runtime limits and leased MxZip-only temporary workspaces (no appcore import)."""
 from __future__ import annotations
 
 import collections
@@ -63,7 +63,7 @@ def _system_temp_dir() -> str:
         _system_temp = tempfile.gettempdir()
     return _system_temp
 _sessions: dict[str, tuple[str, object]] = {}
-_MARKER = b"yzip-temp-session-v1\n"
+_MARKER = b"MxZip-temp-session-v1\n"
 
 
 def worker_count(default_cap: int | None = None) -> int:
@@ -94,16 +94,16 @@ def validate(worker_threads: int = 0, temp_dir: str = "") -> str:
     """Probe the selected private root without changing threads, tempdir or leases.
 
     A not-yet-created directory is created so writability is actually tested.
-    Returns its resolved yzip root; all probe files are removed immediately.
+    Returns its resolved MxZip root; all probe files are removed immediately.
     """
     if type(worker_threads) is not int or not 0 <= worker_threads <= 256:
         raise ValueError("worker_threads must be an integer from 0 to 256")
     if not isinstance(temp_dir, str) or "\0" in temp_dir:
         raise ValueError("temp_dir must be a path string")
     base = os.path.realpath(os.path.expanduser(temp_dir or _system_temp_dir()))
-    root = os.path.join(base, "yzip-temp")
+    root = os.path.join(base, "MxZip-temp")
     if _redirect(root):
-        raise ValueError("yzip-temp must not be a link or junction")
+        raise ValueError("MxZip-temp must not be a link or junction")
     os.makedirs(root, exist_ok=True)
     fd, probe = tempfile.mkstemp(prefix=".probe-", dir=root)
     os.close(fd)
@@ -122,12 +122,12 @@ def configure(worker_threads: int = 0, temp_dir: str = "") -> str:
     root = validate(worker_threads, temp_dir)
     with _lock:
         if _redirect(root):
-            raise ValueError("yzip-temp must not be a link or junction")
+            raise ValueError("MxZip-temp must not be a link or junction")
         os.makedirs(root, exist_ok=True)
         if root not in _sessions:
             session = os.path.join(root, "session-" + uuid.uuid4().hex)
             os.mkdir(session)
-            marker = os.path.join(session, ".yzip-owner")
+            marker = os.path.join(session, ".MxZip-owner")
             file = None
             try:
                 file = open(marker, "x+b")
@@ -181,7 +181,7 @@ def cleanup_temp(*, dry_run: bool = False, paths=None) -> dict | list[str]:
                 path = os.path.join(root, name)
                 if selected is not None and os.path.normcase(os.path.abspath(path)) not in selected:
                     continue
-                owner = os.path.join(path, ".yzip-owner")
+                owner = os.path.join(path, ".MxZip-owner")
                 if _redirect(path) or not os.path.isdir(path) or _redirect(owner):
                     result["skipped"] += 1
                     continue
@@ -308,14 +308,14 @@ def _pool_worker(state: _PoolState):
 
 
 class ThreadPoolExecutor:
-    """The part of concurrent.futures.ThreadPoolExecutor yzip uses (submit / map / shutdown / with, futures with
+    """The part of concurrent.futures.ThreadPoolExecutor MxZip uses (submit / map / shutdown / with, futures with
     result / cancel), built on threading alone. Importing concurrent.futures pulls in logging, traceback and
     inspect: 20-50 ms of every run that starts a pool, which was most of the gap to the third-party archiver on small archives.
     Threads start on demand up to max_workers (daemon threads)."""
 
     def __init__(self, max_workers=None, thread_name_prefix=""):
         self._max = max(1, max_workers or worker_count())
-        self._prefix = thread_name_prefix or "yzip-pool"
+        self._prefix = thread_name_prefix or "MxZip-pool"
         self._state = _PoolState()
         self._threads = []
 

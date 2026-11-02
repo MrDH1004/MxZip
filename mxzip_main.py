@@ -23,7 +23,7 @@ def main() -> int:
         # a folder only administrators may write to (C:\): the same command as administrator, like the third-party archiver
         # (Windows asks in its UAC prompt); if that is refused, the GUI offers another place
         if not writable and not os.environ.get(
-                "YZIP_AUTOACCEPT") and appcore.run_elevated(args):
+                "MXZIP_AUTOACCEPT") and appcore.run_elevated(args):
             return 0
         if writable:
             try:
@@ -34,8 +34,8 @@ def main() -> int:
             except Exception as e:
                 appcore.log_exception(e)
                 raise
-    import yzip_gui
-    yzip_gui.finish(yzip_gui.attach_job(job) if job is not None else yzip_gui.main() or 0)
+    import mxzip_gui
+    mxzip_gui.finish(mxzip_gui.attach_job(job) if job is not None else mxzip_gui.main() or 0)
     return 0
 
 

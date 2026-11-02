@@ -88,7 +88,7 @@ class LibArchive:
         self.close()
 
     def _stage(self, root: str) -> str:
-        stage = tempfile.mkdtemp(prefix="~yzip", suffix=".stage", dir=root)
+        stage = tempfile.mkdtemp(prefix="~MxZip", suffix=".stage", dir=root)
         try:
             import ctypes
             ctypes.windll.kernel32.SetFileAttributesW(stage, 0x2)

@@ -111,7 +111,7 @@ def _safe_part(p: str) -> str:
 def part_path(target: str) -> str:
     """Temporary name next to target for writing it; short, so a 240-character name still fits."""
     # os.urandom, not secrets: same randomness for a unique name, without importing secrets (~7 ms)
-    return os.path.join(os.path.dirname(target), f"~yzip{os.urandom(4).hex()}.part")
+    return os.path.join(os.path.dirname(target), f"~MxZip{os.urandom(4).hex()}.part")
 
 
 def finish_part(part: str, target: str):
@@ -359,7 +359,7 @@ class Archive:
         return any(i.flag_bits & 1 for i in self._names.values())
 
     def _native_accelerator(self):
-        if os.environ.get("YZIP_NATIVE_ZIP_EXTRACT") != "1":
+        if os.environ.get("MXZIP_NATIVE_ZIP_EXTRACT") != "1":
             return None
         from archive_accel import CAP_ZIP_EXTRACT
         if self._tmp is not None:

@@ -5,35 +5,35 @@ $src = Join-Path $t '한글 폴더'
 New-Item -ItemType Directory $src | Out-Null
 Set-Content (Join-Path $src '파일 one.txt') ('가나다' * 2000) -Encoding UTF8
 [IO.File]::WriteAllBytes((Join-Path $src 'rand.bin'), (& { $b = New-Object byte[] 200000; (New-Object Random).NextBytes($b); ,$b }))
-$cli = Join-Path $PSScriptRoot 'yzip_cli.py'
+$cli = Join-Path $PSScriptRoot 'mxzip_cli.py'
 $res = @()
 
-# 1) yzip -> Windows Expand-Archive
+# 1) MxZip -> Windows Expand-Archive
 python $cli c (Join-Path $t 'a.zip') $src | Out-Null
 Expand-Archive (Join-Path $t 'a.zip') (Join-Path $t 'a_out')
-$res += "yzip->Windows : " + ((Get-FileHash (Join-Path $t 'a_out\한글 폴더\rand.bin')).Hash -eq (Get-FileHash (Join-Path $src 'rand.bin')).Hash)
+$res += "MxZip->Windows : " + ((Get-FileHash (Join-Path $t 'a_out\한글 폴더\rand.bin')).Hash -eq (Get-FileHash (Join-Path $src 'rand.bin')).Hash)
 
-# 2) Windows Compress-Archive -> yzip
+# 2) Windows Compress-Archive -> MxZip
 Compress-Archive -Path $src -DestinationPath (Join-Path $t 'w.zip')
 python $cli t (Join-Path $t 'w.zip') | Out-Null; $ok1 = ($LASTEXITCODE -eq 0)
 python $cli x (Join-Path $t 'w.zip') -o (Join-Path $t 'w_out') | Out-Null
-$res += "Windows->yzip : " + ($ok1 -and ((Get-FileHash (Join-Path $t 'w_out\한글 폴더\rand.bin')).Hash -eq (Get-FileHash (Join-Path $src 'rand.bin')).Hash))
+$res += "Windows->MxZip : " + ($ok1 -and ((Get-FileHash (Join-Path $t 'w_out\한글 폴더\rand.bin')).Hash -eq (Get-FileHash (Join-Path $src 'rand.bin')).Hash))
 
-# 3) tar.exe (bsdtar, ships with Windows) reads yzip zip
+# 3) tar.exe (bsdtar, ships with Windows) reads MxZip zip
 New-Item -ItemType Directory (Join-Path $t 't_out') | Out-Null
 tar -xf (Join-Path $t 'a.zip') -C (Join-Path $t 't_out')
-$res += "yzip->tar.exe  : " + ((Get-FileHash (Get-ChildItem (Join-Path $t 't_out') -Recurse -Filter rand.bin).FullName).Hash -eq (Get-FileHash (Join-Path $src 'rand.bin')).Hash)
+$res += "MxZip->tar.exe  : " + ((Get-FileHash (Get-ChildItem (Join-Path $t 't_out') -Recurse -Filter rand.bin).FullName).Hash -eq (Get-FileHash (Join-Path $src 'rand.bin')).Hash)
 
-# 4) 7-Zip / a third-party archiver (YZIP_REF_ARCHIVER) read yzip AES zip, if installed
+# 4) 7-Zip / a third-party archiver (MXZIP_REF_ARCHIVER) read MxZip AES zip, if installed
 python $cli c (Join-Path $t 'e.zip') $src -p 'p@ss한글' | Out-Null
 $sz = 'C:\Program Files\7-Zip\7z.exe'
 if (Test-Path $sz) {
   & $sz t (Join-Path $t 'e.zip') '-pp@ss한글' | Out-Null
-  $res += "yzip AES->7-Zip: " + ($LASTEXITCODE -eq 0)
+  $res += "MxZip AES->7-Zip: " + ($LASTEXITCODE -eq 0)
 } else {
-  $bz = $env:YZIP_REF_ARCHIVER
+  $bz = $env:MXZIP_REF_ARCHIVER
   $pr = Start-Process $bz -ArgumentList 't','-y',"-p:p@ss한글",(Join-Path $t 'e.zip') -PassThru -WindowStyle Hidden; if (-not $pr.WaitForExit(30000)) { $pr.Kill(); $LASTEXITCODE = 99 } else { $LASTEXITCODE = $pr.ExitCode }
-  $res += "yzip AES->Third-party CLI (exit $LASTEXITCODE): " + ($LASTEXITCODE -eq 0)
+  $res += "MxZip AES->Third-party CLI (exit $LASTEXITCODE): " + ($LASTEXITCODE -eq 0)
 }
 
 # 5) performance: 300MB incompressible-ish file

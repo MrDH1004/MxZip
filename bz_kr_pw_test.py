@@ -4,7 +4,7 @@ import tempfile
 
 import ziplib
 
-BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
+BZ = os.environ.get("MXZIP_REF_ARCHIVER", "")
 with tempfile.TemporaryDirectory() as t:
     f = os.path.join(t, "f.txt")
     with open(f, "w") as fh:

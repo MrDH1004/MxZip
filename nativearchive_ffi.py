@@ -1,6 +1,6 @@
 """Small, checked ctypes binding for the libarchive read API.
 
-Only the read-side functions used by yzip are exposed here.  The DLL is
+Only the read-side functions used by MxZip are exposed here.  The DLL is
 loaded from the application bundle, never through PATH, so a missing or
 unloadable native backend produces an actionable capability error.
 """
@@ -45,7 +45,7 @@ class Header:
 
 
 def libarchive_dll_path() -> str:
-    configured = os.environ.get("YZIP_LIBARCHIVE_DLL")
+    configured = os.environ.get("MXZIP_LIBARCHIVE_DLL")
     if configured:
         return configured
     here = os.path.dirname(os.path.abspath(__file__))
@@ -129,7 +129,7 @@ class Reader:
             fn.argtypes = list(argtypes)
             return fn
 
-        lib._yzip = {
+        lib._mxzip = {
             "read_new": bind("archive_read_new", ctypes.c_void_p),
             "filter_all": bind("archive_read_support_filter_all", ctypes.c_int, ctypes.c_void_p),
             "format_all": bind("archive_read_support_format_all", ctypes.c_int, ctypes.c_void_p),
@@ -156,7 +156,7 @@ class Reader:
         return lib
 
     def _error(self, fallback: str, code: Optional[int] = None) -> LibArchiveError:
-        raw = self._lib._yzip["error_string"](self._handle)
+        raw = self._lib._mxzip["error_string"](self._handle)
         message = _decode(raw) or fallback
         return LibArchiveError(message, code)
 
@@ -166,29 +166,29 @@ class Reader:
             raise error_factory(what, code)
 
     def _open(self):
-        handle = self._lib._yzip["read_new"]()
+        handle = self._lib._mxzip["read_new"]()
         if not handle:
             raise LibArchiveUnavailable("archive_read_new returned a null handle")
         self._handle = ctypes.c_void_p(handle)
         try:
             for name, what in (("filter_all", "enable archive filters"), ("format_all", "enable archive formats")):
-                code = self._lib._yzip[name](self._handle)
+                code = self._lib._mxzip[name](self._handle)
                 self._check(code, what, self._error)
             if self.password is not None:
                 encoded = self.password.encode("utf-8")
-                code = self._lib._yzip["add_passphrase"](self._handle, encoded)
+                code = self._lib._mxzip["add_passphrase"](self._handle, encoded)
                 self._check(code, "add archive passphrase", self._error)
             paths = [os.path.abspath(value) for value in self.paths]
             if any("\x00" in value for value in paths):
                 raise ValueError("archive path contains NUL")
             if len(paths) == 1:
-                code = self._lib._yzip["open_filename_w"](self._handle, paths[0], 1 << 20)
+                code = self._lib._mxzip["open_filename_w"](self._handle, paths[0], 1 << 20)
             else:
                 names = (ctypes.c_wchar_p * (len(paths) + 1))()
                 for index, value in enumerate(paths):
                     names[index] = value
                 names[len(paths)] = None
-                code = self._lib._yzip["open_filenames_w"](self._handle, names, 1 << 20)
+                code = self._lib._mxzip["open_filenames_w"](self._handle, names, 1 << 20)
             self._check(code, f"open archive: {self.path}", self._error)
         except BaseException:
             self.close()
@@ -196,7 +196,7 @@ class Reader:
 
     def next_header(self) -> Optional[Header]:
         entry = ctypes.c_void_p()
-        code = self._lib._yzip["next_header"](self._handle, ctypes.byref(entry))
+        code = self._lib._mxzip["next_header"](self._handle, ctypes.byref(entry))
         if code == ARCHIVE_EOF:
             return None
         if code < ARCHIVE_WARN:
@@ -204,40 +204,40 @@ class Reader:
         if not entry:
             raise self._error("archive returned an empty header", code)
 
-        raw_name = self._lib._yzip["entry_path_utf8"](entry)
+        raw_name = self._lib._mxzip["entry_path_utf8"](entry)
         if not raw_name:
-            raw_name = self._lib._yzip["entry_path"](entry)
-        filetype = self._lib._yzip["entry_filetype"](entry)
+            raw_name = self._lib._mxzip["entry_path"](entry)
+        filetype = self._lib._mxzip["entry_filetype"](entry)
         mtime = 0
-        if self._lib._yzip["entry_mtime_set"](entry):
-            mtime = self._lib._yzip["entry_mtime"](entry)
-        size = max(0, self._lib._yzip["entry_size"](entry))
+        if self._lib._mxzip["entry_mtime_set"](entry):
+            mtime = self._lib._mxzip["entry_mtime"](entry)
+        size = max(0, self._lib._mxzip["entry_size"](entry))
         return Header(
             _decode(raw_name).replace("\\", "/"),
             (filetype & AE_IFMT) == AE_IFDIR,
             (filetype & AE_IFMT) == AE_IFREG,
             size,
             mtime,
-            self._lib._yzip["entry_encrypted"](entry) > 0,
+            self._lib._mxzip["entry_encrypted"](entry) > 0,
             entry,
         )
 
     def read_data(self, size: int = 1 << 20) -> bytes:
         buf = ctypes.create_string_buffer(size)
-        count = self._lib._yzip["data"](self._handle, buf, size)
+        count = self._lib._mxzip["data"](self._handle, buf, size)
         if count < 0:
             raise self._error("read archive data", int(count))
         return buf.raw[:count]
 
     def skip_data(self):
-        code = self._lib._yzip["data_skip"](self._handle)
+        code = self._lib._mxzip["data_skip"](self._handle)
         if code < ARCHIVE_WARN:
             raise self._error("skip archive data", code)
 
     def close(self):
         if getattr(self, "_handle", None):
             handle, self._handle = self._handle, ctypes.c_void_p()
-            self._lib._yzip["free"](handle)
+            self._lib._mxzip["free"](handle)
 
     def __enter__(self):
         return self

@@ -346,7 +346,7 @@ def repair_zip(source: str, output: str, progress: Optional[Callable[[int, int, 
     skipped: list[SkippedItem] = []
     temporary_output = ziplib.part_path(output)
     try:
-        with tempfile.TemporaryDirectory(prefix=".yzip-repair-", dir=output_dir) as workspace:
+        with tempfile.TemporaryDirectory(prefix=".MxZip-repair-", dir=output_dir) as workspace:
             try:
                 recovered, skipped = _recover_from_central(
                     source, workspace, per_member_limit, total_limit, cancel, progress)

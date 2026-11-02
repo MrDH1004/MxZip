@@ -17,7 +17,7 @@ import lzmamt
 
 class LzmaPerformanceTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="yzip-lzmamt-test-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="MxZip-lzmamt-test-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 

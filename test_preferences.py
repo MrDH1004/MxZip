@@ -36,10 +36,10 @@ class PreferencesTests(unittest.TestCase):
                 raise RuntimeError("Could not load the offscreen test font")
 
     def setUp(self):
-        self.folder = tempfile.TemporaryDirectory(prefix="yzip-preferences-test-")
+        self.folder = tempfile.TemporaryDirectory(prefix="MxZip-preferences-test-")
         self.addCleanup(self.folder.cleanup)
         self.settings_path = Path(self.folder.name) / "settings.json"
-        self.patch(mock.patch.dict(os.environ, {"YZIP_SETTINGS": str(self.settings_path)}))
+        self.patch(mock.patch.dict(os.environ, {"MXZIP_SETTINGS": str(self.settings_path)}))
         appearance.apply_appearance(self.app)
         self.patch(mock.patch.object(assoc, "status", return_value={
             ext: (False, "다른 앱") for ext in assoc.TYPES}))
@@ -224,7 +224,7 @@ class PreferencesTests(unittest.TestCase):
 
         def inspect(license_dialog):
             expected_style = preferences.PREFERENCES_QSS
-            controller = getattr(self.app, "_yzip_appearance", None)
+            controller = getattr(self.app, "_mxzip_appearance", None)
             if controller is not None:
                 expected_style = controller._style(expected_style)
             self.assertEqual(license_dialog.styleSheet(), expected_style)

@@ -55,7 +55,7 @@ class NativeFormatTests(Tmp):
         got = tree(self.t)
         self.assertTrue(got)
         self.assertEqual(seen[-1][0], seen[-1][1], "progress ends at 100%")
-        self.assertFalse([f for f in os.listdir(self.t) if f.startswith("~yzip")], "staging folder removed")
+        self.assertFalse([f for f in os.listdir(self.t) if f.startswith("~MxZip")], "staging folder removed")
 
     def test_egg_samples(self):
         for n in ("normal.egg", "azo.egg", "solid.egg", "lzma5.egg"):
@@ -196,7 +196,7 @@ class NativeFormatTests(Tmp):
         with self.assertRaises(ValueError):
             formats.detect(p)
 
-    def test_zpaq_roundtrip_through_yzip_backend(self):
+    def test_zpaq_roundtrip_through_mxzip_backend(self):
         tool = os.path.join(HERE, "tools", "zpaq.exe")
         if not os.path.exists(tool):
             self.skipTest("bundled zpaq.exe not present")

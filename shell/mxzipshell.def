@@ -1,4 +1,4 @@
-LIBRARY yzipshell
+LIBRARY mxzipshell
 EXPORTS
     DllGetClassObject PRIVATE
     DllCanUnloadNow PRIVATE

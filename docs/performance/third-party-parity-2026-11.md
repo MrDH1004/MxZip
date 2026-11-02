@@ -1,6 +1,6 @@
 # MxZip vs the third-party archiver (2026-11-01, home PC)
 
-Paired end-to-end runs: each case runs MxZip (`python -c "import yzip_cli; yzip_cli.main(...)"`) and the third-party archiver
+Paired end-to-end runs: each case runs MxZip (`python -c "import mxzip_cli; mxzip_cli.main(...)"`) and the third-party archiver
 (`the third-party CLI`) back to back, level 5, default threads, 1 warm-up + 7 measured runs, median. Every round trip is
 checked (extracted tree size equals the source). Ratio = the third-party archiver time / MxZip time (100 % = as fast).
 

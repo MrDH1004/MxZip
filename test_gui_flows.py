@@ -13,11 +13,11 @@ import time
 from unittest import mock
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
-os.environ["YZIP_NO_OPEN"] = "1"
-os.environ["YZIP_SETTINGS"] = os.path.join(tempfile.mkdtemp(prefix="yzt_set_"), "settings.json")  # never the user's
+os.environ["MXZIP_NO_OPEN"] = "1"
+os.environ["MXZIP_SETTINGS"] = os.path.join(tempfile.mkdtemp(prefix="yzt_set_"), "settings.json")  # never the user's
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-MOD = os.environ.get("GUI_MOD", "yzip_gui")
+MOD = os.environ.get("GUI_MOD", "mxzip_gui")
 LIB = os.environ.get("LIB_MOD", "ziplib")
 
 from PySide6.QtCore import QTimer  # noqa: E402
@@ -117,7 +117,7 @@ gui.open_path = lambda p: opened.append(p)
 
 
 def run_main(argv):
-    sys.argv = ["yzip"] + argv
+    sys.argv = ["MxZip"] + argv
     return gui.main()
 
 
@@ -560,7 +560,7 @@ def test_settings():
             mock.patch.object(assoc, "register", side_effect=lambda exts: calls.append(("register", set(exts)))), \
             mock.patch.object(assoc, "unregister", side_effect=lambda exts: calls.append(("unregister", set(exts)))):
         dlg = gui.SettingsDialog(None)
-        check("settings: file association starts unchecked when yzip is not registered",
+        check("settings: file association starts unchecked when MxZip is not registered",
               all(item.checkState(0) == gui.Qt.Unchecked for item in dlg._association_items.values()),
               [ext for ext, item in dlg._association_items.items() if item.checkState(0) == gui.Qt.Checked])
         dlg._select_associations(True)
@@ -622,11 +622,11 @@ def test_update_check_scope():
     previous_argv = sys.argv[:]
     try:
         with mock.patch.object(gui, "Main", return_value=win):
-            sys.argv = ["yzip"]
+            sys.argv = ["MxZip"]
             gui.main()
             check("update: plain app launch checks once", win.start_update_check.call_count == 1,
                   win.start_update_check.call_count)
-            sys.argv = ["yzip", "sample.zip"]
+            sys.argv = ["MxZip", "sample.zip"]
             gui.main()
             check("update: archive launch checks after opening", win.start_update_check.call_count == 2,
                   (win.open_archive.call_args, win.start_update_check.call_count))
@@ -658,4 +658,4 @@ if __name__ == "__main__":
     _real_exec()  # let queued deletions run in a real event loop, like a normal session end
     failed = [r for r in results if not r[1]]
     print(f"\n{len(results) - len(failed)}/{len(results)} passed")
-    gui.finish(1 if failed else 0)  # same exit path as the real app (see yzip_gui.finish)
+    gui.finish(1 if failed else 0)  # same exit path as the real app (see mxzip_gui.finish)

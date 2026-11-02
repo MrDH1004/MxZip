@@ -96,7 +96,7 @@ class NativeBindingTests(unittest.TestCase):
                     runtime_dll = Path(root, "7z.dll")
                     if payload is not None:
                         runtime_dll.write_bytes(payload)
-                    with mock.patch.dict(os.environ, {"YZIP_7Z_DLL": str(runtime_dll)}):
+                    with mock.patch.dict(os.environ, {"MXZIP_7Z_DLL": str(runtime_dll)}):
                         result = accelerator.extract_zip(
                             "source.zip",
                             [archive_accel.NativeZipJob(0, "stage.bin", 0, 0)],
@@ -151,11 +151,11 @@ class NativeZipTransactionTests(unittest.TestCase):
     def extract_with(self, path, accelerator, *, enable_native=True, **kwargs):
         destination = os.path.join(self.root, "out")
         password = kwargs.pop("password", None)
-        environment = {"YZIP_NATIVE_ZIP_EXTRACT": "1"} if enable_native else {}
+        environment = {"MXZIP_NATIVE_ZIP_EXTRACT": "1"} if enable_native else {}
         with mock.patch.dict(os.environ, environment, clear=False), \
                 mock.patch("ziplib.load_accelerator", return_value=accelerator):
             if not enable_native:
-                os.environ.pop("YZIP_NATIVE_ZIP_EXTRACT", None)
+                os.environ.pop("MXZIP_NATIVE_ZIP_EXTRACT", None)
             with ziplib.Archive(path, password) as archive:
                 archive.extract(destination, **kwargs)
         return destination
@@ -193,7 +193,7 @@ class NativeZipTransactionTests(unittest.TestCase):
         path = self.make_zip([("a.txt", b"alpha")])
         destination = os.path.join(self.root, "kill-switch")
         with mock.patch.dict(os.environ, {
-            "YZIP_NATIVE_ZIP_EXTRACT": "1", "YZIP_DISABLE_ACCEL": "1",
+            "MXZIP_NATIVE_ZIP_EXTRACT": "1", "MXZIP_DISABLE_ACCEL": "1",
         }, clear=False), mock.patch.object(
             ziplib, "load_accelerator", wraps=archive_accel.load_accelerator
         ), mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
@@ -555,7 +555,7 @@ class NativeZipTransactionTests(unittest.TestCase):
 
 class BuiltNativeZipTests(unittest.TestCase):
     def load_built(self):
-        dll = Path(__file__).parent / "nativeaccel" / "build" / "yzip_accel.dll"
+        dll = Path(__file__).parent / "nativeaccel" / "build" / "mxzip_accel.dll"
         self.assertTrue(dll.exists(), "nativeaccel/build.ps1 must run before this test")
         accelerator = archive_accel.load_accelerator(dll)
         self.assertIsNotNone(accelerator, archive_accel.disabled_reason())
@@ -617,7 +617,7 @@ class BuiltNativeZipTests(unittest.TestCase):
                 )
 
                 with mock.patch.dict(
-                    os.environ, {"YZIP_NATIVE_TEST_WRITE_FAULT": fault}, clear=False
+                    os.environ, {"MXZIP_NATIVE_TEST_WRITE_FAULT": fault}, clear=False
                 ):
                     result = accelerator.extract_zip(str(source), [job], None, None)
 

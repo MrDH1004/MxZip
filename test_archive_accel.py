@@ -52,18 +52,18 @@ class LoaderTests(unittest.TestCase):
         archive_accel._reset_for_tests()
 
     def test_missing_dll_disables_accelerator_with_reason(self):
-        missing = Path(tempfile.gettempdir()) / "definitely-missing-yzip-accel.dll"
+        missing = Path(tempfile.gettempdir()) / "definitely-missing-MxZip-accel.dll"
         accelerator = archive_accel.load_accelerator(missing)
         self.assertIsNone(accelerator)
         self.assertIn("not found", archive_accel.disabled_reason().lower())
 
     def test_global_kill_switch_blocks_explicit_and_default_loading(self):
-        with mock.patch.dict(os.environ, {"YZIP_DISABLE_ACCEL": "1"}, clear=False), \
+        with mock.patch.dict(os.environ, {"MXZIP_DISABLE_ACCEL": "1"}, clear=False), \
              mock.patch.object(archive_accel.ctypes, "WinDLL") as load:
             self.assertIsNone(archive_accel.load_accelerator(Path("explicit.dll")))
             self.assertIsNone(archive_accel.load_accelerator())
         load.assert_not_called()
-        self.assertIn("YZIP_DISABLE_ACCEL=1", archive_accel.disabled_reason())
+        self.assertIn("MXZIP_DISABLE_ACCEL=1", archive_accel.disabled_reason())
 
     def test_wrong_abi_disables_accelerator(self):
         library = FakeLibrary(abi=archive_accel.ABI_VERSION + 1)
@@ -125,12 +125,12 @@ class LoaderTests(unittest.TestCase):
 
 class BuiltBridgeTests(unittest.TestCase):
     def test_built_x64_bridge_exports_zip_extraction_capability(self):
-        configured = os.environ.get("YZIP_ACCEL_DLL")
+        configured = os.environ.get("MXZIP_ACCEL_DLL")
         dll = Path(configured) if configured else (
-            Path(__file__).parent / "nativeaccel" / "build" / "yzip_accel.dll"
+            Path(__file__).parent / "nativeaccel" / "build" / "mxzip_accel.dll"
         )
         if not dll.exists():
-            if os.environ.get("YZIP_REQUIRE_ACCEL_DLL") == "1":
+            if os.environ.get("MXZIP_REQUIRE_ACCEL_DLL") == "1":
                 self.fail(f"required native accelerator DLL is missing: {dll}")
             self.skipTest("nativeaccel/build.ps1 has not run")
         accelerator = archive_accel.load_accelerator(dll)
@@ -177,10 +177,10 @@ class BuildContractTests(unittest.TestCase):
         self.assertIn("7zCrcOpt.c", script)
 
     def test_required_native_test_mode_fails_when_dll_is_missing(self):
-        missing = Path(tempfile.gettempdir()) / "required-yzip-accel-is-missing.dll"
+        missing = Path(tempfile.gettempdir()) / "required-MxZip-accel-is-missing.dll"
         environment = os.environ.copy()
-        environment["YZIP_ACCEL_DLL"] = str(missing)
-        environment["YZIP_REQUIRE_ACCEL_DLL"] = "1"
+        environment["MXZIP_ACCEL_DLL"] = str(missing)
+        environment["MXZIP_REQUIRE_ACCEL_DLL"] = "1"
         result = subprocess.run(
             [
                 sys.executable,

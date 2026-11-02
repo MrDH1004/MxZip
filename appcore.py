@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -81,8 +82,25 @@ def normalize_settings(values: Mapping | None = None, *, strict: bool = False) -
 
 
 def settings_path() -> str:
-    return os.environ.get("YZIP_SETTINGS") or os.path.join(
-        os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "yzip", "settings.json")
+    override = os.environ.get("MXZIP_SETTINGS")
+    if override:
+        return override
+    local = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    path = os.path.join(local, "MxZip", "settings.json")
+    if not os.path.exists(path):
+        _adopt_yzip_settings(os.path.join(local, "yzip", "settings.json"), path)
+    return path
+
+
+def _adopt_yzip_settings(old: str, new: str) -> None:
+    """The app was called yzip before: its settings carry over once, the first time MxZip has none."""
+    if not os.path.isfile(old):
+        return
+    try:
+        os.makedirs(os.path.dirname(new), exist_ok=True)
+        shutil.copy2(old, new)
+    except OSError as e:
+        log_exception(e)  # the app still starts, with default settings
 
 
 def load_settings() -> dict:
@@ -109,7 +127,7 @@ def save_settings(values: Mapping) -> dict:
         data = json.dumps(s, ensure_ascii=False, allow_nan=False, indent=2)
         path = os.path.abspath(settings_path())
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        fd, tmp = tempfile.mkstemp(prefix=".yzip-settings-", suffix=".tmp", dir=os.path.dirname(path))
+        fd, tmp = tempfile.mkstemp(prefix=".MxZip-settings-", suffix=".tmp", dir=os.path.dirname(path))
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(data)
@@ -182,13 +200,13 @@ def set_low_priority(on: bool):
 
 
 def log_path() -> str:
-    d = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "yzip")
+    d = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "MxZip")
     os.makedirs(d, exist_ok=True)
     return os.path.join(d, "error.log")
 
 
 def log_exception(exc: BaseException):
-    """A windowed exe has no stderr, so unexpected errors are appended to %LOCALAPPDATA%\\yzip\\error.log."""
+    """A windowed exe has no stderr, so unexpected errors are appended to %LOCALAPPDATA%\\MxZip\\error.log."""
     import traceback
     try:
         with open(log_path(), "a", encoding="utf-8") as f:
@@ -215,7 +233,7 @@ def outcome(fn, progress, cancelled):
 
 class Job:
     """fn(progress, cancelled) on a plain thread. state holds the latest (done, total, name) for a window
-    that may attach later (yzip_gui.run_job(job=...))."""
+    that may attach later (mxzip_gui.run_job(job=...))."""
 
     def __init__(self, fn, title: str, reveal: str, done_text: str):
         self.fn, self.title, self.reveal, self.done_text = fn, title, reveal, done_text
@@ -243,7 +261,7 @@ def can_write(folder: str) -> bool:
     d = os.path.abspath(folder)
     while not os.path.isdir(d) and os.path.dirname(d) != d:
         d = os.path.dirname(d)
-    probe = os.path.join(d, f"~yzip{os.getpid()}_{time.time_ns() % 10**9}.tmp")
+    probe = os.path.join(d, f"~MxZip{os.getpid()}_{time.time_ns() % 10**9}.tmp")
     try:
         os.close(os.open(probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
     except PermissionError:
@@ -258,7 +276,7 @@ def can_write(folder: str) -> bool:
 
 
 def run_elevated(args: list[str]) -> bool:
-    """Start yzip with args as administrator (Windows' UAC prompt). False when it could not start (the user
+    """Start MxZip with args as administrator (Windows' UAC prompt). False when it could not start (the user
     said no to the prompt)."""
     import ctypes
     import subprocess
@@ -266,16 +284,16 @@ def run_elevated(args: list[str]) -> bool:
     if ctypes.windll.shell32.IsUserAnAdmin():  # already elevated: asking again would loop
         return False
     pre = [] if getattr(sys, "frozen", False) else [os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                                                 "yzip_main.py")]
+                                                                 "mxzip_main.py")]
     r = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, subprocess.list2cmdline(pre + args),
                                             None, 1)
     return r > 32
 
 
 def write_list(paths: list[str]) -> str:
-    """The same UTF-8 list file the shell extension writes, for handing a selection to another yzip process."""
+    """The same UTF-8 list file the shell extension writes, for handing a selection to another MxZip process."""
     import tempfile
-    fd, path = tempfile.mkstemp(prefix="yzip_sel_", suffix=".txt")
+    fd, path = tempfile.mkstemp(prefix="mxzip_sel_", suffix=".txt")
     with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
         f.write("".join(p + "\n" for p in paths))
     return path
@@ -363,7 +381,7 @@ def hard_exit(code: int):
     """Leave the process without DLL_PROCESS_DETACH. os._exit() still runs ExitProcess, which calls the static
     destructors of every loaded DLL; shiboken6's crashed there intermittently (0xC0000005, a null read inside
     shiboken6.abi3.dll under ntdll's loader shutdown, after the job had finished and its files were closed).
-    TerminateProcess skips those notifications. Nothing yzip writes depends on them: the archive and the logs
+    TerminateProcess skips those notifications. Nothing MxZip writes depends on them: the archive and the logs
     are closed by then, and only Python's own stdio buffers need flushing."""
     import sys
     for stream in (sys.stdout, sys.stderr):

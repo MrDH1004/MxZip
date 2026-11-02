@@ -1,7 +1,7 @@
-# Puts the native archive payloads yzip bundles into tools\ (not in git; build.ps1 and CI run this):
+# Puts the native archive payloads MxZip bundles into tools\ (not in git; build.ps1 and CI run this):
 #   7z.exe + 7z.dll  7-Zip 26.04, retained only for formats not covered by the native backends
 #   libarchive.dll   libarchive 3.8.10, self-contained MSVC x64 DLL with RAR/RAR5, ISO/UDF, CAB, LHA, ...
-#   yzip_native.dll  yzip's Rust cdylib embedding the pinned unegg/unalz libraries (EGG / ALZ)
+#   mxzip_native.dll  MxZip's Rust cdylib embedding the pinned unegg/unalz libraries (EGG / ALZ)
 # Every downloaded binary is checked against a pinned SHA-256 before it enters the bundle.
 param(
     [switch]$Force,
@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $tools = if ($ToolsDirectory) { [IO.Path]::GetFullPath($ToolsDirectory) } else { Join-Path $root "tools" }
 
-$requiredBinaries = "7z.exe", "7z.dll", "libarchive.dll", "yzip_native.dll", "zpaq.exe"
+$requiredBinaries = "7z.exe", "7z.dll", "libarchive.dll", "mxzip_native.dll", "zpaq.exe"
 $requiredLicenses = @(
     @{ Path = "licenses\7-Zip License.txt"; Marker = "7-Zip" },
     @{ Path = "licenses\libarchive COPYING.txt"; Marker = "libarchive" },
@@ -61,7 +61,7 @@ if (-not $sevenZipSourceUrl -or -not $sevenZipSourceSha256 -or -not $sevenZipVer
 $headerRoot = Join-Path $tools "7zip-src"
 $headerSentinel = Join-Path $headerRoot "CPP\7zip\Archive\IArchive.h"
 if ($Force -or -not (Test-Path -LiteralPath $headerSentinel)) {
-    $headerWork = Join-Path ([IO.Path]::GetTempPath()) "yzip_7zip_headers_$PID"
+    $headerWork = Join-Path ([IO.Path]::GetTempPath()) "mxzip_7zip_headers_$PID"
     New-Item -ItemType Directory -Force $headerWork | Out-Null
     try {
         $sourceArchive = Join-Path $headerWork "7z2604-src.tar.xz"
@@ -100,7 +100,7 @@ function Run($exe, [string[]]$argv) {
     if ($code) { throw "$exe $($argv -join ' ') failed (exit $code)" }
 }
 
-$work = Join-Path ([IO.Path]::GetTempPath()) "yzip_tools_$PID"
+$work = Join-Path ([IO.Path]::GetTempPath()) "mxzip_tools_$PID"
 New-Item -ItemType Directory -Force $work, $tools, (Join-Path $tools "licenses") | Out-Null
 try {
     # ---- 7-Zip ----
@@ -154,7 +154,7 @@ try {
     # ---- EGG / ALZ native module ----
     $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
     if (-not $cargo) { $cargo = Join-Path $env:USERPROFILE ".cargo\bin\cargo.exe" }
-    if (-not (Test-Path $cargo)) { throw "Rust (cargo) is needed to build yzip_native.dll: https://rustup.rs" }
+    if (-not (Test-Path $cargo)) { throw "Rust (cargo) is needed to build mxzip_native.dll: https://rustup.rs" }
     $manifest = Join-Path $root "nativearchive\Cargo.toml"
     $vsdev = Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" `
         -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -164,12 +164,12 @@ try {
     } else {
         Run $cargo @("+stable-x86_64-pc-windows-msvc", "build", "--release", "--locked", "--manifest-path", $manifest)
     }
-    Copy-Item (Join-Path $root "nativearchive\target\release\yzip_native.dll") (Join-Path $tools "yzip_native.dll") -Force
+    Copy-Item (Join-Path $root "nativearchive\target\release\mxzip_native.dll") (Join-Path $tools "mxzip_native.dll") -Force
     Invoke-WebRequest -Uri "https://raw.githubusercontent.com/alkegi/unegg/$UNEGG_COMMIT/LICENSE" `
         -OutFile (Join-Path $tools "licenses\unegg LICENSE.txt") -UseBasicParsing
     Invoke-WebRequest -Uri "https://raw.githubusercontent.com/alkegi/unalz/$UNALZ_COMMIT/LICENSE" `
         -OutFile (Join-Path $tools "licenses\unalz LICENSE.txt") -UseBasicParsing
-    Write-Output "tools: yzip_native.dll (unegg $UNEGG_COMMIT, unalz $UNALZ_COMMIT)"
+    Write-Output "tools: mxzip_native.dll (unegg $UNEGG_COMMIT, unalz $UNALZ_COMMIT)"
 } finally {
     Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }

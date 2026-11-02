@@ -8,7 +8,7 @@ import zipfile
 import zipwriter
 import ziplib
 
-BZ = os.environ.get("YZIP_REF_ARCHIVER", "")
+BZ = os.environ.get("MXZIP_REF_ARCHIVER", "")
 
 
 def sha(b):

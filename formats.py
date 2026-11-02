@@ -441,7 +441,7 @@ class TarArchive(_Base):
             self.members = [m for m in tf if m.isreg() or m.isdir()]
 
     def _open(self):
-        """Forward-only reader; .tar.xz made of several blocks (xz -T, yzip) decodes them in parallel."""
+        """Forward-only reader; .tar.xz made of several blocks (xz -T, MxZip) decodes them in parallel."""
         if self.label == "TAR.XZ":
             return _TarStream(lzmamt.open_xz(self.path))
         return tarfile.open(self.path, "r:*")
@@ -702,7 +702,7 @@ class SevenZArchive(_Base):
         return True
 
     def extract(self, dest, names=None, progress=None, cancel=None, overwrite=True):
-        if (os.environ.get("YZIP_NATIVE_7Z_EXTRACT") == "1" and not self.need and
+        if (os.environ.get("MXZIP_NATIVE_7Z_EXTRACT") == "1" and not self.need and
                 self.joined is None and self._native_metadata_eligible()):
             from archive_accel import CAP_7Z_EXTRACT
             accelerator = load_accelerator()

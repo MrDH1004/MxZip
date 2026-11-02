@@ -44,7 +44,7 @@ def _local_store(name, payload, *, descriptor=True, signed=True, zip64=False,
 
 class ZipRepairTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="yzip-repair-")
+        self.tmp = tempfile.TemporaryDirectory(prefix="MxZip-repair-")
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
 

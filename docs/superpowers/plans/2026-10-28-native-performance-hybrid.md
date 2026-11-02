@@ -1,10 +1,10 @@
-# yzip Native Performance Hybrid Implementation Plan
+# MxZip Native Performance Hybrid Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Keep yzip's fast 7z compression while accelerating plain ZIP compression/extraction and plain 7z extraction through an in-process native DLL, enabling only paths that prove faster and equally safe.
+**Goal:** Keep MxZip's fast 7z compression while accelerating plain ZIP compression/extraction and plain 7z extraction through an in-process native DLL, enabling only paths that prove faster and equally safe.
 
-**Architecture:** A small MSVC C++ bridge (`yzip_accel.dll`) loads the pinned official `7z.dll` and exposes a narrow C ABI. Python owns archive policy, safe destinations, transactions, fallback, cancellation, and progress polling; native code owns only codec-heavy work. Existing Python engines remain the compatibility and failure fallback.
+**Architecture:** A small MSVC C++ bridge (`mxzip_accel.dll`) loads the pinned official `7z.dll` and exposes a narrow C ABI. Python owns archive policy, safe destinations, transactions, fallback, cancellation, and progress polling; native code owns only codec-heavy work. Existing Python engines remain the compatibility and failure fallback.
 
 **Tech Stack:** Python 3.14, C++17/MSVC x64 `/O2 /GL /MT`, verified official 7-Zip 26.04 DLL interfaces, ctypes, unittest, PowerShell build scripts.
 
@@ -16,7 +16,7 @@
 - Keep current 7z compression path and reject regressions greater than 5% in its 8-thread median.
 - Native acceleration is optional; load, ABI, unsupported method, AES, split archive, and mixed-method failures fall back to the existing engine.
 - Source archives and existing outputs remain untouched on cancellation, CRC failure, write failure, or native error.
-- ZIP compression output at the same level may not exceed current yzip by more than `max(2%, 64 KiB)` before default enablement.
+- ZIP compression output at the same level may not exceed current MxZip by more than `max(2%, 64 KiB)` before default enablement.
 - Benchmark gate: level 5, 8 threads, five dataset classes, warm-up plus at least seven measured runs, median and p95, cross-extraction SHA-256 verification.
 - Every production behavior change follows RED→GREEN TDD.
 
@@ -39,7 +39,7 @@
 
 **Interfaces:**
 - Produces: `BenchmarkCase`, `BenchmarkResult`, `run_case(case, runs=7)`, JSON report containing wall median, p95, CPU time, peak RSS, archive size, requested threads, command, and SHA-256 tree result.
-- Consumes: `runtimeconfig.configure(threads)`, installed `the third-party CLI`, current yzip CLI.
+- Consumes: `runtimeconfig.configure(threads)`, installed `the third-party CLI`, current MxZip CLI.
 
 - [ ] **Step 1: Write failing tests** for deterministic case expansion, warm-up exclusion, median/p95 calculation, requested-thread propagation, and hash mismatch failure.
 - [ ] **Step 2: Run** `python -m unittest test_benchmark_native -v`; expect failures because the harness does not exist.
@@ -51,8 +51,8 @@
 ### Task 2: Native DLL ABI, Loader, Cancellation, and Fallback
 
 **Files:**
-- Create: `nativeaccel/yzip_accel.h`
-- Create: `nativeaccel/yzip_accel.cpp`
+- Create: `nativeaccel/mxzip_accel.h`
+- Create: `nativeaccel/mxzip_accel.cpp`
 - Create: `nativeaccel/build.ps1`
 - Create: `archive_accel.py`
 - Create: `test_archive_accel.py`
@@ -68,15 +68,15 @@
 - [ ] **Step 2: Run** `python -m unittest test_archive_accel -v`; expect missing module/API failures.
 - [ ] **Step 3: Implement the minimal stub DLL and ctypes loader**, checking every Win32/DLL call and exact-width type; exceptions never cross the C ABI.
 - [ ] **Step 4: Run** `nativeaccel\build.ps1` and `python -m unittest test_archive_accel -v`; expect pass.
-- [ ] **Step 5: Add build/fetch integration** so the release contains `yzip_accel.dll`, official license text, and pinned 7-Zip binary/header hashes.
+- [ ] **Step 5: Add build/fetch integration** so the release contains `mxzip_accel.dll`, official license text, and pinned 7-Zip binary/header hashes.
 - [ ] **Step 6: Run** `python -m unittest test_archive_accel test_nativearchive -v`; expect pass.
 - [ ] **Step 7: Commit** `feat: add optional native acceleration bridge`.
 
 ### Task 3: Transactional Native ZIP Extraction
 
 **Files:**
-- Modify: `nativeaccel/yzip_accel.h`
-- Modify: `nativeaccel/yzip_accel.cpp`
+- Modify: `nativeaccel/mxzip_accel.h`
+- Modify: `nativeaccel/mxzip_accel.cpp`
 - Modify: `archive_accel.py`
 - Modify: `ziplib.py`
 - Create: `test_zip_native.py`
@@ -98,8 +98,8 @@
 ### Task 4: Native Plain 7z Extraction with Whole-Archive Fallback
 
 **Files:**
-- Modify: `nativeaccel/yzip_accel.h`
-- Modify: `nativeaccel/yzip_accel.cpp`
+- Modify: `nativeaccel/mxzip_accel.h`
+- Modify: `nativeaccel/mxzip_accel.cpp`
 - Modify: `archive_accel.py`
 - Modify: `formats.py`
 - Create: `test_7z_native.py`
@@ -121,8 +121,8 @@
 ### Task 5: Native Plain ZIP Compression
 
 **Files:**
-- Modify: `nativeaccel/yzip_accel.h`
-- Modify: `nativeaccel/yzip_accel.cpp`
+- Modify: `nativeaccel/mxzip_accel.h`
+- Modify: `nativeaccel/mxzip_accel.cpp`
 - Modify: `archive_accel.py`
 - Modify: `zipwriter.py`
 - Create: `test_zip_compress_native.py`
@@ -153,7 +153,7 @@
 
 **Interfaces:**
 - Consumes all Tasks 1–5.
-- Produces: packaged `yzip_accel.dll`, licenses, `YZIP_DISABLE_ACCEL=1` kill switch, benchmark report and raw-result location.
+- Produces: packaged `mxzip_accel.dll`, licenses, `MXZIP_DISABLE_ACCEL=1` kill switch, benchmark report and raw-result location.
 
 - [ ] **Step 1: Write failing package tests** asserting DLL/license inclusion, ABI smoke load from staged app, and kill-switch fallback.
 - [ ] **Step 2: Run package tests**; expect missing staged DLL/kill-switch behavior.

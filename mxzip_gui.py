@@ -1,4 +1,4 @@
-"""yzip GUI (PySide6). Usage: yzip_gui.py [archive.zip] | --archive FILES... | --extract-here ARCHIVE | --extract-folder ARCHIVE"""
+"""MxZip GUI (PySide6). Usage: mxzip_gui.py [archive.zip] | --archive FILES... | --extract-here ARCHIVE | --extract-folder ARCHIVE"""
 from __future__ import annotations
 
 import os
@@ -40,8 +40,8 @@ def fmt_size(n: int) -> str:
 
 
 def open_path(path: str):
-    """Reveal a result in Explorer/associated app. Tests set YZIP_NO_OPEN to avoid launching anything."""
-    if not os.environ.get("YZIP_NO_OPEN"):
+    """Reveal a result in Explorer/associated app. Tests set MXZIP_NO_OPEN to avoid launching anything."""
+    if not os.environ.get("MXZIP_NO_OPEN"):
         os.startfile(path)
 
 
@@ -65,7 +65,7 @@ class Worker(QThread):
 
 def reveal_in_explorer(path: str):
     """Open the folder holding path with the file selected (just the folder if it is not there yet)."""
-    if os.environ.get("YZIP_NO_OPEN"):
+    if os.environ.get("MXZIP_NO_OPEN"):
         return
     import subprocess
     if os.path.isfile(path):
@@ -274,7 +274,7 @@ def run_job(parent, title, fn, reveal=None, done_text="작업을 완료했습니
             dlg.on_progress(*job.state)
         dlg.on_progress(*job.state)
         ok, result = job.ok, job.result
-    if ok and dlg.keep_btn.isChecked() and not os.environ.get("YZIP_AUTOACCEPT"):
+    if ok and dlg.keep_btn.isChecked() and not os.environ.get("MXZIP_AUTOACCEPT"):
         dlg.show_done()
         dlg.show()
         loop = QEventLoop()
@@ -425,7 +425,7 @@ class CompressDialog(QDialog):
         t = self.split.currentText().strip()
         if t in ("", "분할 안 함"):
             return 0
-        from yzip_cli import parse_size
+        from mxzip_cli import parse_size
         try:
             n = parse_size(t)
         except Exception:
@@ -531,12 +531,12 @@ def unique_path(p: str) -> str:
 
 def writable_target(parent, target: str, elevate_args, pick, folder: str | None = None):
     """target (a file to create, or a folder to extract into) lies where only administrators may write (C:\\,
-    Program Files). Like the third-party archiver, yzip then runs the same job as administrator right away (Windows asks in its
-    UAC prompt); only if that is refused, offer another place. elevate_args() -> argv for the elevated yzip;
+    Program Files). Like the third-party archiver, MxZip then runs the same job as administrator right away (Windows asks in its
+    UAC prompt); only if that is refused, offer another place. elevate_args() -> argv for the elevated MxZip;
     pick(parent) -> new target or "". Returns the target to use, or None when there is nothing more to do here."""
     import appcore
     folder = folder or os.path.dirname(os.path.abspath(target))
-    if os.environ.get("YZIP_AUTOACCEPT"):  # unattended tests: never raise a UAC prompt
+    if os.environ.get("MXZIP_AUTOACCEPT"):  # unattended tests: never raise a UAC prompt
         return target if appcore.can_write(folder) else None
     if not appcore.can_write(folder) and appcore.run_elevated(elevate_args()):
         return None
@@ -610,7 +610,7 @@ class _Bridge(QObject):
 
 
 class AssocDialog(QDialog):
-    """Which archive types open in yzip. Shows what Windows really uses per type (a choice the user made in
+    """Which archive types open in MxZip. Shows what Windows really uses per type (a choice the user made in
     Windows stays in force until changed in Settings, which the second button opens)."""
 
     def __init__(self, parent):
@@ -1105,7 +1105,7 @@ class Main(QMainWindow):
         import updater
         if not manual and not updater.due(load_settings()):
             return
-        if not manual and not (getattr(sys, "frozen", False) or os.environ.get("YZIP_UPDATE_URL")):
+        if not manual and not (getattr(sys, "frozen", False) or os.environ.get("MXZIP_UPDATE_URL")):
             return  # running from source: no automatic checks
         bridge = self._upd_bridge = _Bridge()
         bridge.done.connect(lambda rel, err: self._update_result(rel, err, manual))
@@ -1158,7 +1158,7 @@ class Main(QMainWindow):
             self._report(r)
             return
         updater.launch_installer(r)
-        QApplication.quit()  # the installer closes and replaces yzip, then starts the new version
+        QApplication.quit()  # the installer closes and replaces MxZip, then starts the new version
 
     def about(self):
         from version import REPO, __version__
@@ -1443,7 +1443,7 @@ class Main(QMainWindow):
             self.go_to(items[0].data(0, self.NAME))
             return
         name = items[0].data(0, self.NAME)
-        tmp = os.path.realpath(tempfile.mkdtemp(prefix="yzip_"))
+        tmp = os.path.realpath(tempfile.mkdtemp(prefix="mxzip_"))
         if self._do_extract(tmp, [name], "overwrite"):
             p = ziplib.safe_target(tmp, name)  # where the extractor wrote it; never a path the name points to
             if p and os.path.isfile(p):
@@ -1493,7 +1493,7 @@ class Main(QMainWindow):
                 return
         else:
             dlg = CompressDialog(parent, default_path, paths)
-            auto = os.environ.get("YZIP_AUTOACCEPT")
+            auto = os.environ.get("MXZIP_AUTOACCEPT")
             if auto:  # unattended end-to-end tests of the built exe; a format id ("7z") also picks that format
                 if auto in formats.BY_ID:
                     dlg.fmt.setCurrentIndex(dlg.fmt.findData(auto))
@@ -1751,13 +1751,14 @@ class Main(QMainWindow):
 
 
 # ----- Explorer integration (HKCU only, no admin needed) -----
-SHELL_VERBS = [(r"Software\Classes\*\shell\yzip.Compress", "ZIP으로 압축하기 - &MxZip", "--archive"),
-               (r"Software\Classes\Directory\shell\yzip.Compress", "ZIP으로 압축하기 - &MxZip", "--archive")]
-for _ext in formats.READ_EXTS:  # extract verbs for every format yzip reads
-    SHELL_VERBS += [(rf"Software\Classes\SystemFileAssociations\{_ext}\shell\yzip.Here", "여기에 압축 풀기", "--extract-here"),
-                    (rf"Software\Classes\SystemFileAssociations\{_ext}\shell\yzip.Folder", "폴더에 압축 풀기", "--extract-folder")]
-# keys written by the pre-rename build ("ZipKit"); removed on register/unregister so they cannot point at a dead exe
-LEGACY_SHELL_KEYS = [k.replace("yzip.", "ZipKit.") for k, _, _ in SHELL_VERBS]
+SHELL_VERBS = [(r"Software\Classes\*\shell\MxZip.Compress", "ZIP으로 압축하기 - &MxZip", "--archive"),
+               (r"Software\Classes\Directory\shell\MxZip.Compress", "ZIP으로 압축하기 - &MxZip", "--archive")]
+for _ext in formats.READ_EXTS:  # extract verbs for every format MxZip reads
+    SHELL_VERBS += [(rf"Software\Classes\SystemFileAssociations\{_ext}\shell\MxZip.Here", "여기에 압축 풀기", "--extract-here"),
+                    (rf"Software\Classes\SystemFileAssociations\{_ext}\shell\MxZip.Folder", "폴더에 압축 풀기", "--extract-folder")]
+# keys written under the app's former names ("ZipKit", then "yzip"); removed on register/unregister so they
+# cannot point at a dead exe
+LEGACY_SHELL_KEYS = [k.replace("MxZip.", old) for k, _, _ in SHELL_VERBS for old in ("ZipKit.", "yzip.")]
 
 
 def shell_command(flag: str) -> str:
@@ -1776,17 +1777,20 @@ def _delete_key_tree(key: str):
             pass
 
 
-# The compress item comes from shell\yzipshell.dll (an IContextMenu handler) so it can say "<name>.zip으로 압축하기".
+# The compress item comes from shell\mxzipshell.dll (an IContextMenu handler) so it can say "<name>.zip으로 압축하기".
 # Explorer keeps a loaded handler locked, so a versioned copy is installed outside dist (rebuilds stay possible).
-SHELLEX_CLSID = "{7E3B1C52-9A4D-4F1E-B6C2-3D8A5F0E9C71}"
+SHELLEX_CLSID = "{E856C547-DF4F-438A-9357-3225756E4D24}"
+# the handler class of the yzip builds, removed on register/unregister
+LEGACY_SHELLEX_CLSID = "{7E3B1C52-9A4D-4F1E-B6C2-3D8A5F0E9C71}"
 # Explorer lists handlers class by class (* and Directory before AllFilesystemObjects), each class in key-name order.
-# A common third-party archiver registers its handler as "AAB..." under * and Directory; "AAAyzip" sorts just before it, so our items join the
+# A common third-party archiver registers its handler as "AAB..." under * and Directory; "AAAmxzip" sorts just before it, so our items join the
 # block of Windows' "압축 풀기(T)..." and the third-party archiver's items instead of starting their own block below them.
-SHELLEX_KEYS = [rf"Software\Classes\{c}\shellex\ContextMenuHandlers\AAAyzip" for c in ("*", "Directory")]
-# where the handler was registered before; removed on register/unregister so the items don't show twice
+SHELLEX_KEYS = [rf"Software\Classes\{c}\shellex\ContextMenuHandlers\AAAmxzip" for c in ("*", "Directory")]
+# where the handler was registered before (the yzip builds); removed on register/unregister so the items don't show twice
 OLD_SHELLEX_KEYS = [r"Software\Classes\AllFilesystemObjects\shellex\ContextMenuHandlers\yzip"] + [
-    rf"Software\Classes\{c}\shellex\ContextMenuHandlers\AAyzip" for c in ("*", "Directory")]
-APP_KEY = r"Software\yzip"
+    rf"Software\Classes\{c}\shellex\ContextMenuHandlers\{name}" for c in ("*", "Directory") for name in ("AAyzip", "AAAyzip")]
+APP_KEY = r"Software\MxZip"
+LEGACY_APP_KEY = r"Software\yzip"  # read by the yzip builds' shell extension
 
 
 def resource(name: str) -> str:
@@ -1795,7 +1799,7 @@ def resource(name: str) -> str:
 
 
 def shell_dll_source() -> str:
-    for p in (resource("yzipshell.dll"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "shell", "build", "yzipshell.dll")):
+    for p in (resource("mxzipshell.dll"), os.path.join(os.path.dirname(os.path.abspath(__file__)), "shell", "build", "mxzipshell.dll")):
         if os.path.exists(p):
             return p
     return ""
@@ -1814,9 +1818,9 @@ def install_shell_dll(src: str) -> str:
     import hashlib
     with open(src, "rb") as f:
         data = f.read()
-    d = os.path.join(_real_local_appdata(), "yzip", "shell")
+    d = os.path.join(_real_local_appdata(), "MxZip", "shell")
     os.makedirs(d, exist_ok=True)
-    dst = os.path.join(d, f"yzipshell_{hashlib.sha256(data).hexdigest()[:12]}.dll")
+    dst = os.path.join(d, f"mxzipshell_{hashlib.sha256(data).hexdigest()[:12]}.dll")
     if not os.path.exists(dst):
         with open(dst + ".tmp", "wb") as f:
             f.write(data)
@@ -1866,7 +1870,9 @@ def shell_register():
         _delete_key_tree(key)
     for key in OLD_SHELLEX_KEYS:
         _delete_tree(H, key)
-    icon = sys.executable if getattr(sys, "frozen", False) else resource("yzip.ico")
+    _delete_tree(H, rf"Software\Classes\CLSID\{LEGACY_SHELLEX_CLSID}")
+    _delete_tree(H, LEGACY_APP_KEY)
+    icon = sys.executable if getattr(sys, "frozen", False) else resource("MxZip.ico")
     with winreg.CreateKey(H, APP_KEY) as k:  # read by the shell extension
         winreg.SetValueEx(k, "Command", 0, winreg.REG_SZ, _app_command())
         winreg.SetValueEx(k, "Icon", 0, winreg.REG_SZ, icon)
@@ -1914,8 +1920,10 @@ def shell_unregister():
         _delete_key_tree(key)
     for key in SHELLEX_KEYS + OLD_SHELLEX_KEYS:
         _delete_tree(winreg.HKEY_CURRENT_USER, key)
-    _delete_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\CLSID\{SHELLEX_CLSID}")
+    for clsid in (SHELLEX_CLSID, LEGACY_SHELLEX_CLSID):
+        _delete_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\CLSID\{clsid}")
     _delete_tree(winreg.HKEY_CURRENT_USER, APP_KEY)
+    _delete_tree(winreg.HKEY_CURRENT_USER, LEGACY_APP_KEY)
 
 
 def quick_extract(win: Main, arc: str, folder: bool, into: str | None = None):
@@ -1965,8 +1973,8 @@ def _created_at(pid: int):
 
 
 def _sibling_count():
-    """Other live yzip.exe processes started by the same parent (Explorer) within 3 s of this one: the rest of
-    one multi-select, possibly still booting. A long-running yzip window from the same Explorer is not counted.
+    """Other live MxZip.exe processes started by the same parent (Explorer) within 3 s of this one: the rest of
+    one multi-select, possibly still booting. A long-running MxZip window from the same Explorer is not counted.
     Frozen exe only; None when it cannot tell (callers then fall back to the plain quiet-period wait)."""
     if not getattr(sys, "frozen", False) or os.name != "nt":
         return None
@@ -2034,10 +2042,10 @@ def gather_paths(verb: str, paths: list[str], first_wait_ms: int = 1500, quiet_m
     import getpass
     import json
     from PySide6.QtNetwork import QLocalServer, QLocalSocket
-    scale = float(os.environ.get("YZIP_GATHER_SCALE", "1"))  # tests shrink the waits
+    scale = float(os.environ.get("MXZIP_GATHER_SCALE", "1"))  # tests shrink the waits
     first_wait_ms, quiet_ms, max_ms = first_wait_ms * scale, quiet_ms * scale, max_ms * scale
-    name =f"yzip-{verb}-{getpass.getuser()}"
-    _dbg = os.environ.get("YZIP_DEBUG_GATHER")
+    name =f"MxZip-{verb}-{getpass.getuser()}"
+    _dbg = os.environ.get("MXZIP_DEBUG_GATHER")
     if _dbg:
         open(_dbg, "a").write(f"{time.time():.3f} pid{os.getpid()} start {paths}\n")
     def forward() -> bool:
@@ -2088,7 +2096,7 @@ def gather_paths(verb: str, paths: list[str], first_wait_ms: int = 1500, quiet_m
         if (now - began) * 1000 >= max_ms:
             break
         # Explorer creates all N processes at once, so once ours is up the others already exist: with no
-        # sibling yzip.exe alive there is nobody to wait for (a single item no longer costs the full wait)
+        # sibling MxZip.exe alive there is nobody to wait for (a single item no longer costs the full wait)
         if scale >= 1 and (now - began) * 1000 >= 400 and waited >= 200 and _sibling_count() == 0:
             break
         if waited >= quiet_ms and (now - began) * 1000 >= first_wait_ms:
@@ -2108,9 +2116,9 @@ def _app():
     app = QApplication.instance() or QApplication(sys.argv)
     appcore.apply_runtime_settings(strict=False)
     appearance.apply_appearance(app)
-    if os.path.exists(resource("yzip.ico")):
+    if os.path.exists(resource("MxZip.ico")):
         from PySide6.QtGui import QIcon
-        app.setWindowIcon(QIcon(resource("yzip.ico")))
+        app.setWindowIcon(QIcon(resource("MxZip.ico")))
     sys.excepthook = lambda t, e, tb: (log_exception(e), sys.__excepthook__(t, e, tb))
     import threading
     threading.excepthook = lambda a: log_exception(a.exc_value)
@@ -2118,7 +2126,7 @@ def _app():
 
 
 def attach_job(job) -> int:
-    """The progress window for a job yzip_main started before loading Qt."""
+    """The progress window for a job mxzip_main started before loading Qt."""
     _app()
     ok, r = run_job(None, job.title, None, reveal=job.reveal, done_text=job.done_text, job=job)
     if not ok:
@@ -2149,9 +2157,9 @@ def main():
             if args[0] == "--unregister-all":
                 shell_unregister()
         return 0
-    if args[:1] == ["--updated"] and os.environ.get("YZIP_UPDATE_TEST_MARKER"):
+    if args[:1] == ["--updated"] and os.environ.get("MXZIP_UPDATE_TEST_MARKER"):
         from version import __version__  # update test: prove the new version started, without a window
-        with open(os.environ["YZIP_UPDATE_TEST_MARKER"], "w", encoding="utf-8") as f:
+        with open(os.environ["MXZIP_UPDATE_TEST_MARKER"], "w", encoding="utf-8") as f:
             f.write(__version__)
         return 0
     if args[:1] == ["--update-now"]:  # unattended update: check, download, verify, run the installer
@@ -2175,8 +2183,8 @@ def main():
     if args[:1] in (["--archive-list"], ["--compress-dialog-list"]) and len(args) >= 2:
         # from the shell extension: every selected item in one UTF-8 list file.
         # --archive-list LIST --out ZIP: compress at once to the name the menu showed (the exe normally takes
-        # this one in yzip_main, before Qt loads).
-        # --compress-dialog-list LIST: "yzip으로 압축하기...", the compress window (format, password, ...) only.
+        # this one in mxzip_main, before Qt loads).
+        # --compress-dialog-list LIST: "MxZip으로 압축하기...", the compress window (format, password, ...) only.
         paths = read_list(args[1])
         if paths and args[0] == "--archive-list" and len(args) >= 4 and args[2] == "--out":
             if "--each" in args[4:] and len(paths) > 1:  # "각각 ZIP 파일로 압축하기"
@@ -2218,7 +2226,7 @@ def main():
     else:
         win.show()
         win.start_update_check()
-    if os.environ.get("YZIP_AUTOACCEPT"):
+    if os.environ.get("MXZIP_AUTOACCEPT"):
         QTimer.singleShot(500, app.quit)
     return app.exec()
 

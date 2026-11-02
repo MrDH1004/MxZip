@@ -5,7 +5,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import yzip_gui as gui
+import mxzip_gui as gui
 
 
 class ShellSettingsTests(unittest.TestCase):

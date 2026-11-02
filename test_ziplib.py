@@ -358,9 +358,9 @@ class CliTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def cli(self, *args):
-        import contextlib, io, yzip_cli
+        import contextlib, io, mxzip_cli
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            return yzip_cli.main(list(args))
+            return mxzip_cli.main(list(args))
 
     def test_failed_create_keeps_the_old_archive(self):
         z = os.path.join(self.root, "backup.zip")
