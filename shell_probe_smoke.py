@@ -66,7 +66,7 @@ def main() -> int:
             result = subprocess.run(
                 [PROBE, "direct-list", DLL, path], capture_output=True, text=True, encoding="utf-8"
             )
-            expected = "\tmxzip.compress"
+            expected = "\tMxZip.compress"
             if result.returncode or "DIRECT_DLL" not in result.stdout or expected not in result.stdout:
                 print(result.stdout, end="")
                 print(result.stderr, end="")
