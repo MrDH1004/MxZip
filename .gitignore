@@ -24,3 +24,7 @@ perf*.json
 
 # external extractors fetched/built by fetch_tools.ps1
 tools/
+
+# local AI work notes, kept out of the public repo
+CLAUDE.md
+memory/
