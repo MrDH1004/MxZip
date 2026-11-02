@@ -295,16 +295,19 @@ def read_list(path: str) -> list[str]:
 
 
 def quick_targets(paths: list[str], out: str, settings: Mapping | None = None, *,
-                  explicit_zip: bool = False) -> list[tuple[list[str], str]]:
+                  explicit_zip: bool = False, separate: bool | None = None) -> list[tuple[list[str], str]]:
     """Plan outputs using saved format, or ZIP for a named shell quick action.
 
-    Separate mode archives each selection. Format changes replace only the final
+    Separate mode archives each selection; ``separate`` overrides the saved
+    "shell_multi" choice (the shell menu names which one the user picked). Format changes replace only the final
     .zip suffix, preserving dotted folder names. Redirected/separate outputs avoid
     existing files and duplicate output names within the selection.
     """
     s = normalize_settings(load_settings() if settings is None else settings, strict=True)
     fmt = formats.BY_ID["zip" if explicit_zip else s["compress_format"]]
-    separate = s["shell_multi"] == "separate" and len(paths) > 1
+    if separate is None:
+        separate = s["shell_multi"] == "separate"
+    separate = separate and len(paths) > 1
     groups = [[path] for path in paths] if separate else [list(paths)]
     planned, used = [], set()
     for group in groups:
@@ -328,12 +331,12 @@ def quick_targets(paths: list[str], out: str, settings: Mapping | None = None, *
     return planned
 
 
-def quick_compress(paths: list[str], out: str) -> Job:
+def quick_compress(paths: list[str], out: str, separate: bool | None = None) -> Job:
     """Run the shell's named ZIP action, honoring other saved compression options."""
     settings = apply_runtime_settings(strict=False)
     if not paths:
         raise ValueError("No files selected")
-    targets = quick_targets(paths, out, settings, explicit_zip=True)
+    targets = quick_targets(paths, out, settings, explicit_zip=True, separate=separate)
     fmt = formats.BY_ID["zip"]
 
     def run(progress, cancel):

@@ -2179,7 +2179,11 @@ def main():
         # --compress-dialog-list LIST: "yzip으로 압축하기...", the compress window (format, password, ...) only.
         paths = read_list(args[1])
         if paths and args[0] == "--archive-list" and len(args) >= 4 and args[2] == "--out":
-            win.new_archive(paths, standalone=True, out=args[3])
+            if "--each" in args[4:] and len(paths) > 1:  # "각각 ZIP 파일로 압축하기"
+                for path in paths:
+                    win.new_archive([path], standalone=True)
+            else:
+                win.new_archive(paths, standalone=True, out=args[3])
         elif paths and args[0] == "--compress-dialog-list":
             win.new_archive(paths, standalone=True, ask=True)
         return 0

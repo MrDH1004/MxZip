@@ -59,6 +59,56 @@ static bool verify_menu(const wchar_t* path, DWORD mask, bool archive) {
     return ok;
 }
 
+// Two files of one folder with "SeparateArchives": "<folder>.zip으로 압축하기" (one archive named after the folder),
+// then "각각 ZIP 파일로 압축하기", then the dialog item; without the setting only the folder-named item and the dialog.
+static bool verify_multi(const std::wstring& a, const std::wstring& b, DWORD separate) {
+    HKEY config = nullptr;
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\yzip", 0, nullptr, 0, KEY_ALL_ACCESS, nullptr, &config, nullptr) != ERROR_SUCCESS)
+        return false;
+    DWORD mask = 7;
+    bool written = RegSetValueExW(config, L"MenuMask", 0, REG_DWORD, (const BYTE*)&mask, sizeof(mask)) == ERROR_SUCCESS &&
+                   RegSetValueExW(config, L"SeparateArchives", 0, REG_DWORD, (const BYTE*)&separate, sizeof(separate)) == ERROR_SUCCESS;
+    RegCloseKey(config);
+    if (!written)
+        return false;
+    PIDLIST_ABSOLUTE ida = nullptr, idb = nullptr;
+    if (FAILED(SHParseDisplayName(a.c_str(), nullptr, &ida, 0, nullptr)) ||
+        FAILED(SHParseDisplayName(b.c_str(), nullptr, &idb, 0, nullptr)))
+        return false;
+    PIDLIST_ABSOLUTE parent_id = ILCloneFull(ida);
+    ILRemoveLastID(parent_id);
+    PCUITEMID_CHILD children[2] = {ILFindLastID(ida), ILFindLastID(idb)};
+    IDataObject* data = nullptr;
+    bool ok = SUCCEEDED(SHCreateDataObject(parent_id, 2, children, nullptr, IID_PPV_ARGS(&data)));
+    YzipMenu* handler = new YzipMenu();
+    HMENU menu = CreatePopupMenu();
+    ok = ok && SUCCEEDED(handler->Initialize(nullptr, data, nullptr));
+    const wchar_t* expected[] = {L"yzip.compress", L"yzip.compresseach", L"yzip.compressdlg"};
+    std::vector<const wchar_t*> want = separate ? std::vector<const wchar_t*>{expected[0], expected[1], expected[2]}
+                                                : std::vector<const wchar_t*>{expected[0], expected[2]};
+    if (ok) {
+        HRESULT hr = handler->QueryContextMenu(menu, 0, 1, 100, CMF_NORMAL);
+        ok = SUCCEEDED(hr) && HRESULT_CODE(hr) == (int)want.size() && GetMenuItemCount(menu) == (int)want.size();
+        for (int i = 0; ok && i < (int)want.size(); ++i) {
+            wchar_t verb[128] = {};
+            ok = SUCCEEDED(handler->GetCommandString(i, GCS_VERBW, nullptr, (LPSTR)verb, 128)) && !lstrcmpW(verb, want[i]);
+        }
+        // the first item names the folder the files are in: "<folder>.zip으로 압축하기 - &yzip"
+        std::wstring dir = a.substr(0, last_sep(a));
+        std::wstring label(256, L'\0');
+        if (ok)
+            label.resize(GetMenuStringW(menu, 0, &label[0], 256, MF_BYPOSITION));
+        ok = ok && label.find(file_name(dir)) == 0 && label.find(L".zip") != std::wstring::npos;
+    }
+    DestroyMenu(menu);
+    handler->Release();
+    if (data) data->Release();
+    CoTaskMemFree(parent_id);
+    CoTaskMemFree(ida);
+    CoTaskMemFree(idb);
+    return ok;
+}
+
 int wmain(int argc, wchar_t** argv) {
     if (argc != 3 || !exists(argv[1]) || !exists(argv[2])) return 2;
     HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -72,6 +122,12 @@ int wmain(int argc, wchar_t** argv) {
     for (DWORD mask = 0; mask < 8; ++mask) {
         bool result = verify_menu(argv[1], mask, false) && verify_menu(argv[2], mask, true);
         printf("%s native menu mask %lu\n", result ? "PASS" : "FAIL", mask);
+        ok = ok && result;
+    }
+    std::wstring readme = argv[1], license = readme.substr(0, last_sep(readme) + 1) + L"LICENSE";
+    for (DWORD separate = 0; separate < 2; ++separate) {
+        bool result = verify_multi(readme, license, separate);
+        printf("%s native multi-select menu separate=%lu\n", result ? "PASS" : "FAIL", separate);
         ok = ok && result;
     }
     RegOverridePredefKey(HKEY_CURRENT_USER, nullptr);

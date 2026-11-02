@@ -304,6 +304,14 @@ class SettingsCoreTests(unittest.TestCase):
                                          explicit_zip=True)
         self.assertEqual([Path(p).name for _, p in generic], ["one.tar.gz", "two.tar.gz"])
         self.assertEqual([Path(p).name for _, p in explicit], ["one.zip", "two.zip"])
+        # the shell's "<folder>.zip으로 압축하기" item: one archive even when the setting is "separate"
+        bundled = appcore.quick_targets([one, two], str(self.root / "combined.zip"), settings,
+                                        explicit_zip=True, separate=False)
+        self.assertEqual([(len(g), Path(p).name) for g, p in bundled], [(2, "combined.zip")])
+        # "각각 ZIP 파일로 압축하기": one archive per item even when the setting is "combined"
+        each = appcore.quick_targets([one, two], str(self.root / "combined.zip"),
+                                     dict(settings, shell_multi="combined"), explicit_zip=True, separate=True)
+        self.assertEqual([Path(p).name for _, p in each], ["one.zip", "two.zip"])
         settings["shell_multi"] = "combined"
         self.assertEqual(Path(appcore.quick_targets([one], "folder.v1.zip", settings)[0][1]).name,
                          "folder.v1.tar.gz")

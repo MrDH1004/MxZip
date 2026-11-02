@@ -6,6 +6,8 @@
 // otherwise (not all archives) the compress items:
 //   0 "<name>.zip으로 압축하기 - yzip": compresses at once. The handler decides the output path (same "(2)" rule
 //     as yzip's unique_path) so the label and the file always agree: <Command> --archive-list <list> --out <zip>
+//   4 "각각 ZIP 파일로 압축하기 - yzip" (several items, "파일별로 처리" setting): one ZIP per item, named by
+//     yzip: <Command> --archive-list <list> --out <zip> --each
 //   1 "yzip으로 압축하기(W)...": opens yzip's compress window (format, password, ...):
 //     <Command> --compress-dialog-list <list>
 // The selection goes in a UTF-8 list file. <Command> comes from HKCU\Software\yzip\Command (--register-shell).
@@ -20,9 +22,11 @@
 
 // {7E3B1C52-9A4D-4F1E-B6C2-3D8A5F0E9C71}
 static const CLSID CLSID_YzipMenu = {0x7e3b1c52, 0x9a4d, 0x4f1e, {0xb6, 0xc2, 0x3d, 0x8a, 0x5f, 0x0e, 0x9c, 0x71}};
-enum { CMD_COMPRESS, CMD_DIALOG, CMD_HERE, CMD_FOLDER, N_CMDS };
-static const wchar_t* const VERBS_W[] = {L"yzip.compress", L"yzip.compressdlg", L"yzip.extracthere", L"yzip.extractfolder"};
-static const char* const VERBS_A[] = {"yzip.compress", "yzip.compressdlg", "yzip.extracthere", "yzip.extractfolder"};
+enum { CMD_COMPRESS, CMD_DIALOG, CMD_HERE, CMD_FOLDER, CMD_EACH, N_CMDS };
+static const wchar_t* const VERBS_W[] = {L"yzip.compress", L"yzip.compressdlg", L"yzip.extracthere", L"yzip.extractfolder",
+                                         L"yzip.compresseach"};
+static const char* const VERBS_A[] = {"yzip.compress", "yzip.compressdlg", "yzip.extracthere", "yzip.extractfolder",
+                                      "yzip.compresseach"};
 
 static HINSTANCE g_inst;
 static long g_refs;
@@ -316,10 +320,14 @@ public:
             }
         }
         if (!out_.empty() && !archives && (enabled & 1)) {  // archives get the extract items only
+            // like Bandizip: "<folder>.zip" (all in one, named after the folder) is always offered;
+            // "each" is added next to it when several items are selected and the setting asks for it
             cmds_.push_back(CMD_COMPRESS);
-            labels.push_back(paths_.size() > 1 && separate_archives()
-                             ? (english ? L"Compress each item to ZIP - &MxZip" : L"각각 ZIP 파일로 압축하기 - &MxZip")
-                             : (english ? L"Compress to " + escape_amp(file_name(out_)) + L" - &MxZip" : menu_label(out_)));
+            labels.push_back(english ? L"Compress to " + escape_amp(file_name(out_)) + L" - &MxZip" : menu_label(out_));
+            if (paths_.size() > 1 && separate_archives()) {
+                cmds_.push_back(CMD_EACH);
+                labels.push_back(english ? L"Compress each item to ZIP - MxZip" : L"각각 ZIP 파일로 압축하기 - MxZip");
+            }
             cmds_.push_back(CMD_DIALOG);
             labels.push_back(english ? L"Compress with MxZip(&W)..." : L"MxZip으로 압축하기(&W)...");
         }
@@ -366,9 +374,10 @@ public:
         std::wstring cmd = read_command();
         if (cmd.empty() || paths_.empty())
             return E_FAIL;
-        if (which == CMD_COMPRESS && out_.empty())
+        bool compress = which == CMD_COMPRESS || which == CMD_EACH;
+        if (compress && out_.empty())
             out_ = output_path(paths_);
-        if (which == CMD_COMPRESS && out_.empty())
+        if (compress && out_.empty())
             return E_FAIL;
 
         wchar_t tmp[MAX_PATH];
@@ -381,7 +390,8 @@ public:
         if (!write_utf8(list, text))
             return E_FAIL;
 
-        std::wstring line = which == CMD_COMPRESS ? cmd + L" --archive-list \"" + list + L"\" --out \"" + out_ + L"\""
+        std::wstring line = compress ? cmd + L" --archive-list \"" + list + L"\" --out \"" + out_ + L"\"" +
+                                           (which == CMD_EACH ? L" --each" : L"")
                           : which == CMD_DIALOG   ? cmd + L" --compress-dialog-list \"" + list + L"\""
                           : which == CMD_HERE     ? cmd + L" --extract-list here \"" + list + L"\""
                                                   : cmd + L" --extract-list folder \"" + list + L"\"" +
@@ -403,9 +413,11 @@ public:
             return E_INVALIDARG;
         int c = cmds_[id];
         static const wchar_t* const HELP_W[] = {L"선택한 항목을 ZIP 파일로 바로 압축합니다", L"형식과 암호 등을 골라 압축합니다",
-                                                L"압축 파일이 있는 폴더에 풉니다", L"압축 파일 이름의 폴더에 풉니다"};
+                                                L"압축 파일이 있는 폴더에 풉니다", L"압축 파일 이름의 폴더에 풉니다",
+                                                L"선택한 항목을 각각 ZIP 파일로 압축합니다"};
         static const char* const HELP_A[] = {"Compress the selection to a ZIP file", "Choose format and options, then compress",
-                                             "Extract next to the archive", "Extract into a folder named after the archive"};
+                                             "Extract next to the archive", "Extract into a folder named after the archive",
+                                             "Compress each selected item to its own ZIP file"};
         switch (type) {
         case GCS_VERBW:
             return StringCchCopyW((LPWSTR)name, cch, VERBS_W[c]);

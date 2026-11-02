@@ -16,7 +16,9 @@ def main() -> int:
         if not paths:
             appcore.read_list(args[1])
             return 0
-        targets = appcore.quick_targets(paths, args[3], settings, explicit_zip=True)
+        # "--each": the shell's "각각 ZIP 파일로 압축하기"; without it the one archive the menu named
+        each = "--each" in args[4:]
+        targets = appcore.quick_targets(paths, args[3], settings, explicit_zip=True, separate=each)
         writable = all(appcore.can_write(os.path.dirname(os.path.abspath(out))) for _, out in targets)
         # a folder only administrators may write to (C:\): the same command as administrator, like the third-party archiver
         # (Windows asks in its UAC prompt); if that is refused, the GUI offers another place
@@ -28,7 +30,7 @@ def main() -> int:
                 paths = appcore.read_list(args[1])
                 if not paths:
                     return 0
-                job = appcore.quick_compress(paths, args[3])
+                job = appcore.quick_compress(paths, args[3], separate=each)
             except Exception as e:
                 appcore.log_exception(e)
                 raise

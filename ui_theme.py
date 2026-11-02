@@ -3,8 +3,10 @@
 Appearance owns live palette conversion and scales these sizes proportionally.
 """
 
+# One family only: a list ('Segoe UI', 'Malgun Gothic') makes Qt resolve it for every widget polish,
+# ~0.3 s before the first window shows. Appearance swaps in the user's font anyway.
 COMMON_QSS = """
-QWidget { font-family: 'Segoe UI', 'Malgun Gothic'; font-size: 10pt; color: #202D35; }
+QWidget { font-family: 'Malgun Gothic'; font-size: 10pt; color: #202D35; }
 QDialog { background: #F4F6F7; }
 QLabel { background: transparent; }
 QPushButton, QToolButton { background: #FFFFFF; color: #202D35; border: 1px solid #DCE3E6;

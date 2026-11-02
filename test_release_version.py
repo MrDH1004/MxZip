@@ -15,8 +15,8 @@ ROOT = pathlib.Path(__file__).resolve().parent
 
 
 class ReleaseVersionContractTests(unittest.TestCase):
-    def test_1022_is_the_single_release_version(self):
-        self.assertEqual("1.0.22", version.__version__)
+    def test_1023_is_the_single_release_version(self):
+        self.assertEqual("1.0.23", version.__version__)
         notes = ROOT / ".github" / f"release-notes-{version.__version__}.md"
         self.assertTrue(notes.is_file(), notes)
         self.assertEqual(f"# MxZip {version.__version__}", notes.read_text(encoding="utf-8").splitlines()[0])
