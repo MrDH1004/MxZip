@@ -1,6 +1,6 @@
 """Update check against the GitHub latest-release API (public repo, no token).
 
-A release carries yzip-setup-X.Y.Z.exe and yzip-setup-X.Y.Z.exe.sha256. The installer is downloaded to a temp
+A release carries MxZip-setup-X.Y.Z.exe and MxZip-setup-X.Y.Z.exe.sha256. The installer is downloaded to a temp
 folder, checked against that SHA-256 and started silently; it closes yzip, installs, re-registers the Explorer
 menu and starts the new version with --updated. YZIP_UPDATE_URL points the check at another URL (tests use a
 local server); YZIP_NO_UPDATE turns automatic checks off."""
@@ -54,7 +54,7 @@ def check(current: str = __version__) -> Optional[Release]:
     if parse_version(tag) <= parse_version(current):
         return None
     assets = {a["name"]: a["browser_download_url"] for a in data.get("assets", [])}
-    setup = next((n for n in assets if re.fullmatch(r"yzip-setup-[\d.]+\.exe", n)), None)
+    setup = next((n for n in assets if re.fullmatch(r"MxZip-setup-[\d.]+\.exe", n)), None)
     if not setup or setup + ".sha256" not in assets:
         return None  # a release without a verifiable installer is not offered
     if parse_version(setup) != parse_version(tag):

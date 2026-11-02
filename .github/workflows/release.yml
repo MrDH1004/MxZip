@@ -147,8 +147,8 @@ jobs:
         id: upload-setup
         uses: actions/upload-artifact@v4
         with:
-          name: yzip-setup
-          path: dist/yzip-setup-*.exe
+          name: MxZip-setup
+          path: dist/MxZip-setup-*.exe
 
       - name: Sign installer (SignPath)
         if: env.SIGN == 'true'
@@ -169,7 +169,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = python -c "import version; print(version.__version__)"
-          $name = "yzip-setup-$v.exe"
+          $name = "MxZip-setup-$v.exe"
           if (Test-Path "dist\setup-signed\$name") { Copy-Item "dist\setup-signed\$name" "dist\$name" -Force }
           $hash = (Get-FileHash "dist\$name" -Algorithm SHA256).Hash.ToLower()
           [IO.File]::WriteAllText("dist\$name.sha256", "$hash  $name`n")

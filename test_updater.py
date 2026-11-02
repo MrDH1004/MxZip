@@ -42,7 +42,7 @@ class UpdaterTests(unittest.TestCase):
         os.environ.pop("YZIP_UPDATE_URL", None)
 
     def publish(self, tag, payload=b"MZ fake installer" * 1000, sha=None, assets=True, **extra):
-        name = f"yzip-setup-{tag.lstrip('v')}.exe"
+        name = f"MxZip-setup-{tag.lstrip('v')}.exe"
         rel = {"tag_name": tag, "html_url": "https://example/release", "body": "notes", **extra,
                "assets": [{"name": name, "browser_download_url": self.base + "/" + name},
                           {"name": name + ".sha256", "browser_download_url": self.base + "/" + name + ".sha256"}]

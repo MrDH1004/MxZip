@@ -68,11 +68,11 @@ try {
             Where-Object { Test-Path $_ } | Select-Object -First 1
         if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe)가 없습니다" }
         Run $iscc @("/Q", "/DAppVersion=$version", "$root\installer\yzip.iss")
-        $setup = "$root\dist\yzip-setup-$version.exe"
+        $setup = "$root\dist\MxZip-setup-$version.exe"
         Sign $setup
         # the updater checks this; CI writes it again after the installer is signed
         $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
-        [IO.File]::WriteAllText("$setup.sha256", "$hash  yzip-setup-$version.exe`n")
+        [IO.File]::WriteAllText("$setup.sha256", "$hash  MxZip-setup-$version.exe`n")
         Write-Output "설치 파일: $setup"
     }
 } finally { Pop-Location }

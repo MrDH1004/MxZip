@@ -18,7 +18,7 @@ YMX의 Windows 압축 프로그램 (이전 이름: yzip).
 
 ## 설치
 
-[Releases](https://github.com/MrDH1004/yzip/releases)에서 `yzip-setup-X.Y.Z.exe`를 받아 실행합니다.
+[Releases](https://github.com/MrDH1004/MxZip/releases)에서 `MxZip-setup-X.Y.Z.exe`를 받아 실행합니다.
 사용자 계정에 설치되므로 관리자 권한이 필요 없고, 설치하면 우클릭 메뉴가 등록됩니다.
 현재 설치 파일은 코드 서명 없이 배포되므로 처음 실행할 때 SmartScreen 경고가 나올 수 있습니다.
 

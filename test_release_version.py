@@ -15,8 +15,8 @@ ROOT = pathlib.Path(__file__).resolve().parent
 
 
 class ReleaseVersionContractTests(unittest.TestCase):
-    def test_1023_is_the_single_release_version(self):
-        self.assertEqual("1.0.23", version.__version__)
+    def test_100_is_the_single_release_version(self):
+        self.assertEqual("1.0.0", version.__version__)
         notes = ROOT / ".github" / f"release-notes-{version.__version__}.md"
         self.assertTrue(notes.is_file(), notes)
         self.assertEqual(f"# MxZip {version.__version__}", notes.read_text(encoding="utf-8").splitlines()[0])
@@ -49,7 +49,7 @@ class ReleaseVersionContractTests(unittest.TestCase):
         self.assertEqual(f"MxZip {version.__version__}", contract["AppVerName"])
         self.assertEqual(version.__version__, contract["VersionInfoVersion"])
         self.assertEqual(version.__version__, contract["VersionInfoProductVersion"])
-        self.assertEqual(f"yzip-setup-{version.__version__}", contract["OutputBaseFilename"])
+        self.assertEqual(f"MxZip-setup-{version.__version__}", contract["OutputBaseFilename"])
 
     def test_release_workflow_runs_version_contract_suite(self):
         workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
@@ -59,10 +59,10 @@ class ReleaseVersionContractTests(unittest.TestCase):
         self.assertIn("test_release_version", modules)
 
     def test_built_installer_filename_matches_version_when_present(self):
-        installers = sorted((ROOT / "dist").glob("yzip-setup-*.exe")) if (ROOT / "dist").is_dir() else []
+        installers = sorted((ROOT / "dist").glob("MxZip-setup-*.exe")) if (ROOT / "dist").is_dir() else []
         if not installers:
             self.skipTest("built installer is not present")
-        self.assertIn(ROOT / "dist" / f"yzip-setup-{version.__version__}.exe", installers)
+        self.assertIn(ROOT / "dist" / f"MxZip-setup-{version.__version__}.exe", installers)
 
 
 if __name__ == "__main__":
