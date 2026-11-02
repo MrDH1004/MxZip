@@ -35,7 +35,27 @@ class AssocTests(unittest.TestCase):
         assoc._del_tree(rf"Software\Classes\{EXT}")
         assoc._del_tree(r"Software\Classes\Other.yzt")
         assoc._del_tree(r"Software\Classes\MxZipLegacyTest" + EXT)
+        assoc._del_tree(rf"{assoc.FILE_EXTS}\{EXT}")
         assoc.TYPES.pop(EXT, None)
+
+    def _user_choice(self, pid):
+        # what Windows writes when the user picks an app with "Always" (hash irrelevant here)
+        assoc._set(rf"{assoc.FILE_EXTS}\{EXT}\UserChoice", "ProgId", pid)
+        assoc._set(rf"{assoc.FILE_EXTS}\{EXT}\UserChoiceLatest\ProgId", "ProgId", pid)
+
+    def test_choice_of_an_uninstalled_app_is_cleared(self):
+        self._user_choice("GoneApp" + EXT)  # e.g. Bandizip.zip after Bandizip was removed
+        assoc.register([EXT], exe=EXE)
+        self.assertIsNone(assoc._get(rf"{assoc.FILE_EXTS}\{EXT}\UserChoice", "ProgId"))
+        self.assertIsNone(assoc._get(rf"{assoc.FILE_EXTS}\{EXT}\UserChoiceLatest\ProgId", "ProgId"))
+        self.assertTrue(assoc.status([EXT], EXE)[EXT][0])
+
+    def test_choice_of_an_installed_app_is_kept(self):
+        assoc._set(r"Software\Classes\Other.yzt\shell\open\command", "", r'"C:\Windows\notepad.exe" "%1"')
+        self._user_choice("Other.yzt")
+        assoc.register([EXT], exe=EXE)
+        self.assertEqual(assoc._get(rf"{assoc.FILE_EXTS}\{EXT}\UserChoice", "ProgId"), "Other.yzt")
+        self.assertEqual(assoc._get(rf"{assoc.FILE_EXTS}\{EXT}\UserChoiceLatest\ProgId", "ProgId"), "Other.yzt")
 
     def test_register_makes_windows_open_it_with_mxzip(self):
         self.assertFalse(assoc.status([EXT], EXE)[EXT][0])

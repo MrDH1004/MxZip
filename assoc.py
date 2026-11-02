@@ -5,7 +5,8 @@ publishes Capabilities + RegisteredApplications so Settings > Default apps knows
 user's own choice (UserChoice, hash-protected) out of reach of programs: where one exists, only the user can
 switch it in Settings, so status() reads the handler Windows really uses (AssocQueryString) instead of
 trusting what was written. Where no choice exists, the extension's default is pointed at MxZip; the value it
-had is kept and put back by unregister()."""
+had is kept and put back by unregister(). A choice left behind by an uninstalled app (its ProgID is gone) is
+removed, since Windows would otherwise keep showing a blank icon instead of using the default."""
 from __future__ import annotations
 
 import ctypes
@@ -84,6 +85,32 @@ def _del_tree(path):
         pass
 
 
+FILE_EXTS = r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts"
+
+
+def _progid_exists(pid: str) -> bool:
+    try:
+        winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, pid))
+        return True
+    except OSError:
+        return False
+
+
+def clear_stale_choice(ext: str) -> bool:
+    """Drop the user's choice for ext when it names a ProgID that no longer exists (an uninstalled app).
+    Windows still obeys such a choice, so the files show a blank icon and open the "Open with" dialog,
+    and the extension's default never applies. A choice naming an installed app is left alone.
+    Returns whether a stale choice was removed."""
+    removed = False
+    for key, sub in (("UserChoice", ""), ("UserChoiceLatest", r"\ProgId")):
+        path = rf"{FILE_EXTS}\{ext}\{key}"
+        pid = _get(path + sub, "ProgId")
+        if pid and not _progid_exists(pid):
+            _del_tree(path)
+            removed = removed or _get(path + sub, "ProgId") is None
+    return removed
+
+
 def notify():
     """Tell Explorer that associations changed (icons, Open with, defaults)."""
     ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)  # SHCNE_ASSOCCHANGED, SHCNF_IDLIST
@@ -114,6 +141,7 @@ def register(exts=None, exe: str | None = None, icon: str | None = None) -> None
             if cur and _get(base, "PreviousDefault") is None:
                 _set(base, "PreviousDefault", cur)
             _set(cls, "", pid)  # used by Windows only where the user has made no choice of their own
+        clear_stale_choice(ext)
     notify()
 
 

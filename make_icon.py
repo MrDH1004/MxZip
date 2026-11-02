@@ -1,8 +1,9 @@
 """Generate the MxZip app icon (MxZip.ico) with Pillow only.
 
-The mark is YMX's chevron cube in the logo's own colours (traced from ymx.co.kr/media/logo-dark.png) on a white
-tile: yellow diamond, sky-to-blue upper chevron, blue side bar, navy lower chevron. A zipper closes the gap
-between the two chevrons: navy interlocking teeth under a yellow slider, so the cube reads as a packed (zipped) box.
+The mark is YMX's chevron cube (traced from ymx.co.kr/media/logo-dark.png) on a YMX navy circle, transparent
+outside it: yellow diamond, sky-to-blue upper chevron, sky side bar, white lower chevron (the logo's navy parts
+are lightened so they stand out on the navy). A zipper closes the gap between the two chevrons: white
+interlocking teeth under a yellow slider, so the cube reads as a packed (zipped) box.
 
 Usage: python make_icon.py [preview.png]
 """
@@ -20,13 +21,13 @@ HERE = Path(__file__).resolve().parent
 SIZES = (16, 20, 24, 32, 40, 48, 64, 96, 128, 256)
 SS = 4  # supersampling factor
 
-TILE = (255, 255, 255)
-TILE_EDGE = (214, 222, 234)  # keeps the white tile visible on white backgrounds
+TILE = (29, 62, 121)  # YMX navy circle
+TILE_EDGE = TILE
 YELLOW = (254, 207, 25)
-SKY, BLUE = (61, 162, 219), (16, 100, 174)
-BAR = (30, 76, 154)
-LOWER_C = (29, 63, 121)
-TEETH = (29, 63, 121)
+SKY, BLUE = (61, 162, 219), (16, 110, 181)
+BAR = SKY  # the navy parts of the logo turn sky/white so they stand out on the navy circle
+LOWER_C = (255, 255, 255)
+TEETH = (255, 255, 255)
 
 # YMX mark, mark box 202 x 229
 DIAMOND = [(100, 2), (148, 27), (100, 52), (54, 27)]
@@ -52,12 +53,13 @@ def render(size: int) -> Image.Image:
     n = size * SS
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    pad = (0.03 if size <= 24 else 0.06) * n  # small sizes use more of the square
-    draw.rounded_rectangle([pad, pad, n - pad, n - pad], radius=0.2 * n, fill=TILE + (255,),
-                           outline=TILE_EDGE + (255,), width=max(SS, n // 128))
-    fill = 0.72 if size <= 24 else 0.66
+    pad = (0.02 if size <= 24 else 0.05) * n  # small circles use nearly the whole square
+    circle = [pad, pad, n - pad - 1, n - pad - 1]
+    draw.ellipse(circle, fill=TILE + (255,), outline=TILE_EDGE + (255,), width=max(SS, n // 128))
+    fill = 0.78 if size <= 24 else 0.70
     scale = (n - 2 * pad) * fill / 229
-    ox, oy = n / 2 - 101 * scale, n / 2 - 114.5 * scale
+    centre = (n - 1) / 2
+    ox, oy = centre - 101 * scale, centre - 114.5 * scale
 
     def tf(points):
         return [(ox + x * scale, oy + y * scale) for x, y in points]
