@@ -352,7 +352,8 @@ class SettingsCoreTests(unittest.TestCase):
             assoc.register([".exe"])
 
     def test_assoc_subset_changes_only_selected_extension(self):
-        with patch("assoc._set") as write, patch("assoc._get", return_value=None), patch("assoc.notify"):
+        with patch("assoc._set") as write, patch("assoc._get", return_value=None), patch("assoc.notify"), \
+                patch("assoc.effective", return_value=("test.exe", "MxZip")):
             assoc.register([".xz"], exe="test.exe")
             paths = [call.args[0] for call in write.call_args_list]
             self.assertTrue(any("MxZip.xz" in path for path in paths))

@@ -409,8 +409,10 @@ class PreferencesDialog(QDialog):
                 added = sorted(selected - self._association_initial)
                 removed = sorted(self._association_initial - selected)
                 if added:
-                    assoc.register(added)
+                    pending = assoc.register(added)
                     self._association_initial.update(added)
+                    if pending:
+                        self._ask_default_apps(pending)
                 if removed:
                     assoc.unregister(removed)
                     self._association_initial.difference_update(removed)
@@ -426,6 +428,17 @@ class PreferencesDialog(QDialog):
             self._error("설정 확인", exc)
             return
         super().accept()
+
+    def _ask_default_apps(self, exts):
+        """Windows keeps its own handler for these types until the user picks MxZip in Settings."""
+        answer = QMessageBox.question(
+            self, "파일 연결",
+            "Windows가 다음 형식의 기본 앱은 사용자가 직접 고르도록 하고 있습니다:\n" + ", ".join(exts) +
+            "\n\nWindows 기본 앱 설정에서 MxZip을 선택해야 이 형식이 MxZip으로 열리고 아이콘이 바뀝니다."
+            "\n기본 앱 설정을 열까요?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
+        if answer == QMessageBox.StandardButton.Yes:
+            self._guard("기본 앱 설정", assoc.open_default_apps)
 
     def _error(self, title, exc):
         appcore.log_exception(exc)

@@ -669,8 +669,9 @@ class AssocDialog(QDialog):
             self.list.addTopLevelItem(it)
         others = [e for e, (mine, _) in st.items() if e in registered and not mine]
         self.note.setText(
-            "Windows에 다른 프로그램이 기본으로 지정된 형식이 있습니다: " + ", ".join(others) +
-            ". 이 형식은 '기본 앱 설정 열기'에서 MxZip을 직접 골라야 바뀝니다 (Windows 정책)." if others else
+            "아직 MxZip으로 열리지 않는 형식이 있습니다: " + ", ".join(others) +
+            ". 다른 앱이 기본으로 지정됐거나 Windows가 직접 고르도록 하는 형식입니다. "
+            "'기본 앱 설정 열기'에서 MxZip을 선택해 주세요 (Windows 정책)." if others else
             "체크한 형식은 '연결 프로그램' 목록에 MxZip이 추가되고, 다른 기본 앱이 없으면 MxZip으로 열립니다.")
 
     def apply(self):

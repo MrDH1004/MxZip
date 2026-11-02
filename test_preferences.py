@@ -46,7 +46,7 @@ class PreferencesTests(unittest.TestCase):
         self.registered = set()
         self.patch(mock.patch.object(assoc, "enabled", side_effect=lambda exts=None:
                                     all(ext in self.registered for ext in (exts or assoc.TYPES))))
-        self.register = self.patch(mock.patch.object(assoc, "register"))
+        self.register = self.patch(mock.patch.object(assoc, "register", return_value=[]))
         self.unregister = self.patch(mock.patch.object(assoc, "unregister"))
         self.critical = self.patch(mock.patch.object(QMessageBox, "critical"))
         self.warning = self.patch(mock.patch.object(QMessageBox, "warning"))
@@ -168,6 +168,25 @@ class PreferencesTests(unittest.TestCase):
         self.unregister.assert_not_called()
         for ext in (".zip", ".7z", ".tar"):
             self.assertEqual(dialog._association_items[ext].checkState(0), Qt.CheckState.Checked)
+
+    def test_types_windows_keeps_send_the_user_to_default_apps(self):
+        dialog = self.dialog()
+        dialog._association_items[".zip"].setCheckState(0, Qt.CheckState.Checked)
+        self.register.return_value = [".zip"]
+        for answer, opened in ((QMessageBox.StandardButton.No, 0), (QMessageBox.StandardButton.Yes, 1)):
+            dialog._association_initial.discard(".zip")
+            with mock.patch.object(QMessageBox, "question", return_value=answer) as question, \
+                    mock.patch.object(assoc, "open_default_apps") as open_apps:
+                self.assertTrue(dialog.apply())
+            self.assertIn(".zip", question.call_args.args[2])
+            self.assertEqual(open_apps.call_count, opened)
+
+    def test_no_prompt_when_windows_accepts_every_type(self):
+        dialog = self.dialog()
+        dialog._association_items[".alz"].setCheckState(0, Qt.CheckState.Checked)
+        with mock.patch.object(QMessageBox, "question") as question:
+            self.assertTrue(dialog.apply())
+        question.assert_not_called()
 
     def test_bulk_buttons_stage_selection_without_changing_registry(self):
         dialog = self.dialog()

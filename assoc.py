@@ -6,7 +6,9 @@ user's own choice (UserChoice, hash-protected) out of reach of programs: where o
 switch it in Settings, so status() reads the handler Windows really uses (AssocQueryString) instead of
 trusting what was written. Where no choice exists, the extension's default is pointed at MxZip; the value it
 had is kept and put back by unregister(). A choice left behind by an uninstalled app (its ProgID is gone) is
-removed, since Windows would otherwise keep showing a blank icon instead of using the default."""
+removed, since Windows would otherwise keep showing a blank icon instead of using the default. For the archive
+types Windows 11 opens itself only the user's choice counts; register() returns those not opened with MxZip so
+the caller can send the user to Default apps."""
 from __future__ import annotations
 
 import ctypes
@@ -116,10 +118,16 @@ def notify():
     ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)  # SHCNE_ASSOCCHANGED, SHCNF_IDLIST
 
 
-def register(exts=None, exe: str | None = None, icon: str | None = None) -> None:
+def register(exts=None, exe: str | None = None, icon: str | None = None) -> list[str]:
+    """Register MxZip for exts. Returns the extensions Windows still does not open with MxZip: the user
+    must pick MxZip for them in Settings > Default apps (or "Open with" > Always).
+
+    Windows 11 does not let a program become the handler of the archive types it opens itself (.zip, .7z,
+    .rar, .tar, .gz, ...): once a new app is registered for one, it treats the type as having no handler
+    (blank icon, "Open with" dialog) until the user picks an app, whatever the extension's default says."""
     exts = _extensions(exts)
     if not exts:
-        return
+        return []
     exe = exe or exe_path()
     icon = icon or (exe + ",0" if exe.lower().endswith(".exe") else exe)
     cmd = open_command(exe)
@@ -143,6 +151,7 @@ def register(exts=None, exe: str | None = None, icon: str | None = None) -> None
             _set(cls, "", pid)  # used by Windows only where the user has made no choice of their own
         clear_stale_choice(ext)
     notify()
+    return [ext for ext, (mine, _) in status(exts, exe).items() if not mine]
 
 
 def _drop_progids(app: str, exts) -> None:

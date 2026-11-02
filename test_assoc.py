@@ -50,6 +50,17 @@ class AssocTests(unittest.TestCase):
         self.assertIsNone(assoc._get(rf"{assoc.FILE_EXTS}\{EXT}\UserChoiceLatest\ProgId", "ProgId"))
         self.assertTrue(assoc.status([EXT], EXE)[EXT][0])
 
+    def _windows_refuses(self):
+        # Windows 11 for its own archive types (.zip, .7z, ...): a program-set default yields no handler
+        refuse = mock.patch.object(assoc, "effective", lambda ext: (r"C:\WINDOWS\system32\OpenWith.exe", ""))
+        refuse.start()
+        self.addCleanup(refuse.stop)
+
+    def test_types_windows_keeps_are_reported(self):
+        self._windows_refuses()
+        self.assertEqual(assoc.register([EXT], exe=EXE), [EXT])
+        self.assertTrue(assoc.enabled([EXT]))  # still offered under "Open with" and in Default apps
+
     def test_choice_of_an_installed_app_is_kept(self):
         assoc._set(r"Software\Classes\Other.yzt\shell\open\command", "", r'"C:\Windows\notepad.exe" "%1"')
         self._user_choice("Other.yzt")
@@ -60,7 +71,7 @@ class AssocTests(unittest.TestCase):
     def test_register_makes_windows_open_it_with_mxzip(self):
         self.assertFalse(assoc.status([EXT], EXE)[EXT][0])
         self.assertFalse(assoc.enabled([EXT]))
-        assoc.register([EXT], exe=EXE)
+        self.assertEqual(assoc.register([EXT], exe=EXE), [])
         mine, name = assoc.status([EXT], EXE)[EXT]
         self.assertTrue(mine, name)
         self.assertTrue(assoc.enabled([EXT]))

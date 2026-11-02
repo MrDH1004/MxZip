@@ -39,7 +39,7 @@ class SettingsFlows(unittest.TestCase):
         self.addCleanup(env.stop)
         for target in ("mxzip_gui.shell_register", "mxzip_gui.shell_unregister", "assoc.register", "assoc.unregister",
                        "PySide6.QtWidgets.QMessageBox.critical", "PySide6.QtWidgets.QMessageBox.warning"):
-            patcher = mock.patch(target)
+            patcher = mock.patch(target, return_value=[]) if target == "assoc.register" else mock.patch(target)
             patcher.start()
             self.addCleanup(patcher.stop)
         self.win = gui.Main()
