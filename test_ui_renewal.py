@@ -67,6 +67,22 @@ class RenewalTests(unittest.TestCase):
         self.assertEqual(self.win.size().toTuple(), (640, 454))
         self.assertEqual(self.win.minimumSize().toTuple(), (640, 420))
 
+    def test_opening_an_archive_doubles_the_file_list(self):
+        QTest.qWait(50)
+        self.assertTrue(self.win.open_archive(str(self.arc)))
+        QTest.qWait(100)
+        self.assertGreaterEqual(self.win.tree.height(), 2 * 164)  # 164 px (4 rows) at the home size 640x454
+        self.assertEqual(self.win.width(), 640)
+        avail = self.win.screen().availableGeometry()
+        self.assertLessEqual(self.win.frameGeometry().bottom(), avail.bottom())
+
+    def test_opening_an_archive_keeps_a_window_the_user_enlarged(self):
+        self.win.resize(900, 800)
+        QTest.qWait(50)
+        self.win.open_archive(str(self.arc))
+        QTest.qWait(100)
+        self.assertEqual(self.win.size().toTuple(), (900, 800))
+
     def test_supported_formats_distinguish_reading_and_writing(self):
         foot = self.win.homeFoot.text()
         for name in ("ZIP", "7Z", "RAR", "EGG", "ALZ", "TAR", "ISO", "CAB", "ZIPX", "LZH", "ZPAQ"):

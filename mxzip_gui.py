@@ -739,6 +739,7 @@ class Main(QMainWindow):
     COLS = ["이름", "크기", "수정한 날짜", "압축 크기", "방식", "CRC", "암호"]
     DETAIL_COLS = (3, 4, 5, 6)  # hidden unless '자세한 정보 보기' is on
     NAME, IS_DIR, SORT = Qt.UserRole, Qt.UserRole + 1, Qt.UserRole + 2
+    LIST_HEIGHT = 328  # file list on opening an archive: twice the 164 px (4 rows) the home size 640x454 leaves
 
     def __init__(self):
         super().__init__()
@@ -1285,8 +1286,24 @@ class Main(QMainWindow):
         self.setWindowTitle(f"{os.path.basename(path)} - {APP} {__version__}")
         self._fill()
         self._set_page(True)
+        self._fit_list()
         self.status.showMessage("")
         return True
+
+    def _fit_list(self):
+        """Grow the window (never shrink it) so the file list is at least LIST_HEIGHT tall, within the screen."""
+        if self.isMaximized() or self.isFullScreen():
+            return
+        self.centralWidget().layout().activate()
+        need = self.LIST_HEIGHT - self.tree.height()
+        if need <= 0:
+            return
+        avail = (self.screen() or QApplication.primaryScreen()).availableGeometry()
+        frame_extra = self.frameGeometry().height() - self.height()
+        self.resize(self.width(), min(self.height() + need, avail.height() - frame_extra))
+        fg = self.frameGeometry()
+        if fg.bottom() > avail.bottom():
+            self.move(fg.x(), max(avail.top(), avail.bottom() - fg.height() + 1))
 
     def _icon(self, name: str, is_dir: bool):
         from PySide6.QtCore import QFileInfo
