@@ -47,6 +47,27 @@ if ($CheckCacheOnly) {
     exit 1
 }
 
+# Downloads a pinned file: a few tries per URL, then the next URL (an official mirror of the same file).
+# The caller checks the SHA-256 afterwards, so a mirror can only ever supply the pinned bytes.
+function Get-Download([string[]]$Urls, [string]$OutFile) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $last = $null
+    foreach ($url in $Urls) {
+        for ($try = 1; $try -le 3; $try++) {
+            try {
+                # a non-browser agent: SourceForge then answers with the file instead of its download page
+                Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing -TimeoutSec 300 -UserAgent "Wget/1.21"
+                return
+            } catch {
+                $last = $_
+                Write-Output "  download failed ($try/3) $url : $($_.Exception.Message)"
+                Start-Sleep -Seconds (5 * $try)
+            }
+        }
+    }
+    throw $last
+}
+
 $sevenZipPinsPath = Join-Path $root "nativeaccel\7zip-pins.json"
 $sevenZipPins = Get-Content -Raw -LiteralPath $sevenZipPinsPath | ConvertFrom-Json
 $sevenZipSourceUrl = [string]$sevenZipPins.source_url
@@ -65,8 +86,8 @@ if ($Force -or -not (Test-Path -LiteralPath $headerSentinel)) {
     New-Item -ItemType Directory -Force $headerWork | Out-Null
     try {
         $sourceArchive = Join-Path $headerWork "7z2604-src.tar.xz"
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $sevenZipSourceUrl -OutFile $sourceArchive -UseBasicParsing
+        Get-Download @($sevenZipSourceUrl, "https://www.7-zip.org/a/7z2604-src.tar.xz",
+            "https://sourceforge.net/projects/sevenzip/files/7-Zip/26.04/7z2604-src.tar.xz/download") $sourceArchive
         $sourceHash = (Get-FileHash $sourceArchive -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($sourceHash -ne $sevenZipSourceSha256) { throw "7-Zip source checksum mismatch: $sourceHash" }
         New-Item -ItemType Directory -Force $headerRoot | Out-Null
@@ -105,8 +126,8 @@ New-Item -ItemType Directory -Force $work, $tools, (Join-Path $tools "licenses")
 try {
     # ---- 7-Zip ----
     $msi = Join-Path $work "7z.msi"
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -Uri $SEVENZIP_URL -OutFile $msi -UseBasicParsing
+    Get-Download @($SEVENZIP_URL, "https://www.7-zip.org/a/7z2604-x64.msi",
+        "https://sourceforge.net/projects/sevenzip/files/7-Zip/26.04/7z2604-x64.msi/download") $msi
     $got = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
     if ($got -ne $SEVENZIP_SHA256) { throw "7-Zip MSI checksum mismatch: $got" }
     $p = Start-Process msiexec -ArgumentList "/a", "`"$msi`"", "/qn", "TARGETDIR=`"$work\7z`"" -Wait -PassThru
@@ -118,7 +139,7 @@ try {
 
     # ---- libarchive ----
     $libzip = Join-Path $work "libarchive.zip"
-    Invoke-WebRequest -Uri $LIBARCHIVE_URL -OutFile $libzip -UseBasicParsing
+    Get-Download @($LIBARCHIVE_URL) $libzip
     $got = (Get-FileHash $libzip -Algorithm SHA256).Hash.ToLower()
     if ($got -ne $LIBARCHIVE_SHA256) { throw "libarchive checksum mismatch: $got" }
     $libdir = Join-Path $work "libarchive"
