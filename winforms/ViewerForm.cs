@@ -11,7 +11,9 @@ namespace MxZip.Viewer;
 /// </summary>
 sealed class ViewerForm : Form
 {
-    readonly AppSettings settings;
+    AppSettings settings;
+    FileSystemWatcher? settingsWatcher;
+    System.Windows.Forms.Timer? settingsDebounce;
     readonly Theme theme;
     string? archive;
     string? password;
@@ -27,7 +29,8 @@ sealed class ViewerForm : Form
 
     readonly FlowLayoutPanel toolbar = new();
     readonly ToolButton openButton, extractButton, newButton, addButton, deleteButton, testButton, infoButton,
-                        flatButton, settingsButton;
+                        settingsButton;
+    readonly ToolToggle flatButton, themeButton;
     readonly Banner banner;
     readonly Banner updateBanner;
     string updateVersion = "";
@@ -35,7 +38,7 @@ sealed class ViewerForm : Form
     readonly Button upButton = new();
     readonly Label location = new();
     readonly Panel content = new();
-    readonly ListView list = new();
+    readonly ThemedListView list = new();
     readonly Panel empty = new();
     readonly Panel status = new();
     readonly Label statusText = new();
@@ -67,7 +70,9 @@ sealed class ViewerForm : Form
         deleteButton = Tool("파일 삭제", Icons.DeleteFile, DeleteSelected);
         testButton = Tool("오류 검사", Icons.Test, TestArchive);
         infoButton = Tool("정보", Icons.Info, ShowInfo);
-        flatButton = Tool("전체 보기", Icons.FlatList, ToggleFlat);
+        flatButton = ToggleTool("전체 보기", Icons.FlatList, ToggleFlat);
+        themeButton = ToggleTool("다크 모드", Icons.Moon, ToggleTheme);
+        themeButton.Checked = theme.Dark;
         settingsButton = Tool("환경설정", Icons.Settings, () => Engine.Forward("--settings"));
         toolbar.Dock = DockStyle.Top;
         toolbar.BackColor = theme.Toolbar;
@@ -75,6 +80,7 @@ sealed class ViewerForm : Form
         toolbar.Padding = new Padding(6, 2, 6, 2);
         toolbar.Controls.AddRange(new Control[] { openButton, extractButton, newButton, Separator(), addButton,
                                                   deleteButton, testButton, infoButton, Separator(), flatButton });
+        toolbar.Controls.Add(themeButton);
         toolbar.Controls.Add(settingsButton);
         toolbar.Resize += (_, _) => PlaceSettings();
 
@@ -128,6 +134,13 @@ sealed class ViewerForm : Form
         list.DrawSubItem += DrawCell;
         list.DrawColumnHeader += DrawHeader;
         list.Resize += (_, _) => FitColumns();
+        list.GotFocus += (_, _) =>
+        {
+            if (list.FocusedItem == null && list.Items.Count > 0)
+                list.Items[0].Focused = true;  // a keyboard user lands on a visible row
+            list.Invalidate();
+        };
+        list.LostFocus += (_, _) => list.Invalidate();
         list.ItemActivate += (_, _) => OpenItem(list.SelectedItems.Count > 0 ? list.SelectedItems[0] : null);
         list.ColumnClick += (_, e) => Sort(e.Column);
         list.SelectedIndexChanged += (_, _) => UpdateButtons();
@@ -194,12 +207,12 @@ sealed class ViewerForm : Form
         FitToDpi();
         float scale = DeviceDpi / 96f;
         Size = new Size((int)(960 * scale), (int)(640 * scale));
-        MinimumSize = new Size((int)(560 * scale), (int)(380 * scale));
         UpdateButtons();
         Shown += async (_, _) =>
         {
             banner.Visible = !AppSettings.BannerDismissed && !ZipOpensWithMxZip();
             _ = CheckForUpdate();
+            WatchSettings();
             if (archive != null && listing != null)
                 await LoadArchive(archive, listing);
             else
@@ -231,6 +244,14 @@ sealed class ViewerForm : Form
         return b;
     }
 
+    /// <summary>A toolbar toggle; like the buttons, its action runs after the click returns.</summary>
+    ToolToggle ToggleTool(string label, Icons.Painter painter, Action action)
+    {
+        var t = new ToolToggle(theme, label, painter);
+        t.Click += (_, _) => BeginInvoke(action);
+        return t;
+    }
+
     Control Separator() => new Panel { Width = 1, BackColor = theme.Border, Margin = new Padding(6, 14, 6, 14) };
 
     void FitToDpi()
@@ -241,6 +262,8 @@ sealed class ViewerForm : Form
         {
             if (c is ToolButton tb)
                 tb.Fit(dpi);
+            else if (c is ToolToggle tt)
+                tt.Fit(dpi);
             else
                 c.Height = (int)(34 * s);
         }
@@ -258,6 +281,13 @@ sealed class ViewerForm : Form
         foreach (CardButton card in empty.Controls.OfType<Control>().SelectMany(Descendants).OfType<CardButton>())
             card.Fit(dpi);
         emptyPicture.Image = Icons.Render(Icons.ArchiveBox, (int)(64 * s), theme.Muted, theme.Accent);
+        // never narrower than the toolbar: a narrower window would push 전체 보기 / 환경설정 out of sight
+        // (다크 모드's left margin is the stretch gap PlaceSettings adds, not space the buttons need)
+        int toolbarWidth = toolbar.Controls.OfType<Control>()
+                                  .Sum(c => c.Width + (c == themeButton ? 4 : c.Margin.Horizontal)) +
+                           toolbar.Padding.Horizontal + (int)(16 * s);
+        int frame = Width - ClientSize.Width;
+        MinimumSize = new Size(Math.Max((int)(560 * s), toolbarWidth + frame), (int)(380 * s));
         PlaceSettings();
     }
 
@@ -301,6 +331,17 @@ sealed class ViewerForm : Form
         var color = e.ColumnIndex == 0 ? theme.Text : theme.Muted;
         TextRenderer.DrawText(g, e.SubItem.Text, list.Font, textRect, color,
                               align | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        if (list.Focused && e.Item.Focused)  // keyboard position: an accent outline around the whole row
+        {
+            int w = Math.Max(1, (int)(DeviceDpi / 96f));
+            using var ring = new SolidBrush(theme.Accent);
+            g.FillRectangle(ring, row.Left, row.Top, row.Width, w);
+            g.FillRectangle(ring, row.Left, row.Bottom - w, row.Width, w);
+            if (e.ColumnIndex == 0)
+                g.FillRectangle(ring, row.Left, row.Top, w, row.Height);
+            if (e.ColumnIndex == list.Columns.Count - 1)
+                g.FillRectangle(ring, row.Right - w, row.Top, w, row.Height);
+        }
     }
 
     /// <summary>The last column takes the rest of the width, so the header has no blank end.</summary>
@@ -318,10 +359,11 @@ sealed class ViewerForm : Form
     /// <summary>환경설정 sits at the right end of the toolbar.</summary>
     void PlaceSettings()
     {
-        int used = toolbar.Controls.OfType<Control>().Where(c => c != settingsButton)
+        // 다크 모드 and 환경설정 sit at the right end: the gap goes before 다크 모드
+        int used = toolbar.Controls.OfType<Control>().Where(c => c != themeButton)
                           .Sum(c => c.Width + c.Margin.Horizontal) + toolbar.Padding.Horizontal;
-        int gap = toolbar.ClientSize.Width - used - settingsButton.Width - settingsButton.Margin.Horizontal;
-        settingsButton.Margin = new Padding(Math.Max(2, gap), settingsButton.Margin.Top, 2, settingsButton.Margin.Bottom);
+        int gap = toolbar.ClientSize.Width - used - themeButton.Width - 2;
+        themeButton.Margin = new Padding(Math.Max(2, gap), themeButton.Margin.Top, 2, themeButton.Margin.Bottom);
     }
 
     readonly PictureBox emptyPicture = new() { SizeMode = PictureBoxSizeMode.AutoSize, Anchor = AnchorStyles.None };
@@ -345,6 +387,7 @@ sealed class ViewerForm : Form
             AutoSize = true,
             Anchor = AnchorStyles.None,
             ForeColor = theme.Text,
+            Tag = "text",
             Font = new Font(Font.FontFamily, Font.Size * 1.35f),
             Margin = new Padding(0, 14, 0, 6),
         };
@@ -354,6 +397,7 @@ sealed class ViewerForm : Form
             AutoSize = true,
             Anchor = AnchorStyles.None,
             ForeColor = theme.Muted,
+            Tag = "muted",
             Margin = new Padding(0, 0, 0, 22),
         };
         var cards = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, BackColor = theme.Window };
@@ -397,7 +441,7 @@ sealed class ViewerForm : Form
         testButton.Enabled = open;
         infoButton.Enabled = open;
         flatButton.Enabled = open;
-        flatButton.Emphasis = flat;
+        flatButton.Checked = flat;
         bool up = !flat && current.Length > 0;
         if (upButton.Enabled != up || upButton.Image == null)
         {
@@ -584,8 +628,7 @@ sealed class ViewerForm : Form
     void ToggleFlat()
     {
         flat = !flat;
-        flatButton.Emphasis = flat;
-        flatButton.Fit(DeviceDpi);
+        flatButton.Checked = flat;
         ShowFolder(flat ? current : (folders.ContainsKey(current) ? current : ""));
     }
 
@@ -839,8 +882,18 @@ sealed class ViewerForm : Form
         if (archive == null || !editable || chosen.Count == 0 || running != null)
             return;
         var members = MembersOf(chosen);
-        if (MessageBox.Show(this, $"{chosen.Count}개 항목을 압축 파일에서 삭제할까요?", "MxZip", MessageBoxButtons.YesNo,
-                            MessageBoxIcon.Question) != DialogResult.Yes)
+        // the native task dialog: verb buttons ("삭제" / "취소") and the consequence stated up front
+        var delete = new TaskDialogButton("삭제");
+        var page = new TaskDialogPage
+        {
+            Caption = "MxZip",
+            Heading = $"{chosen.Count}개 항목 삭제",
+            Text = $"선택한 항목({members.Count:N0}개 파일)을 '{Path.GetFileName(archive)}'에서 지웁니다. 되돌릴 수 없습니다.",
+            Icon = TaskDialogIcon.Warning,
+            Buttons = { delete, TaskDialogButton.Cancel },
+            DefaultButton = TaskDialogButton.Cancel,
+        };
+        if (TaskDialog.ShowDialog(this, page) != delete)
             return;
         string arc = archive;
         var r = await RunJob("삭제하는 중...", (pw, p) =>
@@ -860,7 +913,7 @@ sealed class ViewerForm : Form
         long files = entries.Count(e => !e.IsDir), dirs = folders.Count - 1;
         long size = entries.Where(e => !e.IsDir).Sum(e => e.Size), packed = entries.Where(e => !e.IsDir).Sum(e => e.CSize);
         int encrypted = entries.Count(e => e.Encrypted);
-        string ratio = size > 0 ? $"{100.0 * packed / size:N1}%" : "-";
+        string ratio = size > 0 ? $"원본의 {100.0 * packed / size:N1}%" : "-";
         var text = new StringBuilder()
             .AppendLine($"파일: {fi.Name}")
             .AppendLine($"위치: {fi.DirectoryName}")
@@ -868,7 +921,7 @@ sealed class ViewerForm : Form
             .AppendLine($"압축 파일 크기: {FormatSize(fi.Exists ? fi.Length : 0)}")
             .AppendLine($"파일 {files:N0}개, 폴더 {dirs:N0}개")
             .AppendLine($"원본 크기: {FormatSize(size)}")
-            .AppendLine($"압축률: {ratio}")
+            .AppendLine($"압축 후 크기: {ratio}")
             .AppendLine($"암호: {(encrypted > 0 ? $"{encrypted:N0}개 항목" : "없음")}")
             .Append($"파일 추가·삭제: {(editable ? "가능" : "불가 (ZIP만)")}");
         MessageBox.Show(this, text.ToString(), "압축 파일 정보 - MxZip", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -935,6 +988,123 @@ sealed class ViewerForm : Form
         else
             Compress(paths);  // anything else: a new archive
     }
+
+    // ----- following MxZip's settings -----
+
+    /// <summary>
+    /// 환경설정 > 테마 (시스템 설정 / 밝게 / 어둡게) and the other options take effect in this window as soon as the
+    /// settings file changes; with 시스템 설정 the window also follows Windows' own dark / light switch.
+    /// </summary>
+    void WatchSettings()
+    {
+        settingsDebounce = new System.Windows.Forms.Timer { Interval = 300 };
+        settingsDebounce.Tick += (_, _) =>
+        {
+            settingsDebounce.Stop();
+            ReloadSettings();
+        };
+        try
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MxZip");
+            Directory.CreateDirectory(dir);
+            settingsWatcher = new FileSystemWatcher(dir, "settings.json")
+            {
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size,
+                EnableRaisingEvents = true,
+            };
+            // MxZip saves through a temp file and a rename: both events mean "read it again"
+            settingsWatcher.Changed += (_, _) => BeginInvoke(RestartDebounce);
+            settingsWatcher.Renamed += (_, _) => BeginInvoke(RestartDebounce);
+            settingsWatcher.Created += (_, _) => BeginInvoke(RestartDebounce);
+        }
+        catch (Exception)
+        {
+            settingsWatcher = null;  // the window still works; it just won't pick up later changes
+        }
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnSystemPreferenceChanged;
+    }
+
+    void RestartDebounce()
+    {
+        if (IsDisposed || settingsDebounce == null)
+            return;
+        settingsDebounce.Stop();
+        settingsDebounce.Start();
+    }
+
+    void OnSystemPreferenceChanged(object? sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category is Microsoft.Win32.UserPreferenceCategory.General or Microsoft.Win32.UserPreferenceCategory.Color
+            && !IsDisposed)
+            BeginInvoke(RestartDebounce);  // 시스템 설정: Windows switched between dark and light
+    }
+
+    void ReloadSettings()
+    {
+        settings = AppSettings.Load();
+        bool dark = Theme.IsDark(Environment.GetEnvironmentVariable("MXZIP_THEME") ?? settings.Theme);
+        if (dark == theme.Dark)
+            return;
+        theme.Use(dark);
+        themeButton.Checked = dark;
+        ApplyTheme();
+    }
+
+    // ----- dark / light -----
+
+    /// <summary>다크 모드: switches at once and saves it as MxZip's theme setting (the Qt windows follow it too).</summary>
+    void ToggleTheme()
+    {
+        theme.Use(!theme.Dark);
+        themeButton.Checked = theme.Dark;
+        try
+        {
+            AppSettings.SaveTheme(theme.Dark ? "dark" : "light");
+        }
+        catch (Exception e)
+        {
+            statusText.Text = "테마 설정을 저장하지 못했습니다: " + e.Message;
+        }
+        ApplyTheme();
+    }
+
+    /// <summary>Re-colours every surface from the current palette (colours set in the constructor, icons, list).</summary>
+    void ApplyTheme()
+    {
+        SuspendLayout();
+        BackColor = content.BackColor = empty.BackColor = theme.Window;
+        ForeColor = theme.Text;
+        toolbar.BackColor = theme.Toolbar;
+        foreach (Control c in toolbar.Controls)
+            if (c is not ToolButton and not ToolToggle)
+                c.BackColor = theme.Border;  // separators
+        pathBar.BackColor = status.BackColor = theme.Panel;
+        upButton.FlatAppearance.MouseOverBackColor = theme.Hover;
+        location.ForeColor = statusText.ForeColor = theme.Muted;
+        cancelLink.LinkColor = cancelLink.ActiveLinkColor = theme.Accent;
+        banner.ApplyTheme();
+        updateBanner.ApplyTheme();
+        foreach (Control c in Descendants(empty))
+        {
+            if (c is Label label)
+                label.ForeColor = (label.Tag as string) == "muted" ? theme.Muted : theme.Text;
+            else if (c is not CardButton)
+                c.BackColor = theme.Window;
+        }
+        theme.ApplyList(list);
+        theme.ApplyWindow(this);
+        FitToDpi();  // icons are rendered in the palette's colours
+        ResumeLayout(true);
+        foreach (Control c in Descendants(this))
+            c.Invalidate();
+        RedrawFrame();
+    }
+
+    /// <summary>The title bar takes the new dark / light mode only when the frame is redrawn.</summary>
+    void RedrawFrame() => SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020);
+
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     // ----- update notice -----
 
@@ -1019,6 +1189,9 @@ sealed class ViewerForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnSystemPreferenceChanged;
+        settingsWatcher?.Dispose();
+        settingsDebounce?.Dispose();
         running?.Cancel();
         base.OnFormClosing(e);
     }

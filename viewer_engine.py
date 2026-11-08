@@ -93,8 +93,33 @@ def _failure(e: BaseException) -> dict:
     if isinstance(e, ziplib.Cancelled):
         return {"ok": False, "error": "cancel", "message": "취소했습니다."}
     if isinstance(e, FileNotFoundError):
-        return {"ok": False, "error": "missing", "message": f"파일을 찾을 수 없습니다: {e.filename or ''}"}
-    return {"ok": False, "error": "message", "message": str(e) or type(e).__name__}
+        return {"ok": False, "error": "missing",
+                "message": f"파일을 찾을 수 없습니다: {e.filename or ''}\n옮겨지거나 지워졌는지 확인하고 다시 여세요."}
+    return {"ok": False, "error": "message", "message": _explain(e)}
+
+
+class UserError(ValueError):
+    """A refusal already worded for the user (what is not possible and why); shown as it is."""
+
+
+def _explain(e: BaseException) -> str:
+    """What failed and what to do next, for the errors people actually meet; the original text follows."""
+    detail = str(e) or type(e).__name__
+    if isinstance(e, UserError):
+        return detail
+    errno = getattr(e, "errno", None)
+    winerror = getattr(e, "winerror", None)
+    if isinstance(e, PermissionError) and winerror in (32, 33):  # sharing / lock violation
+        advice = "다른 프로그램이 파일을 쓰고 있습니다. 그 프로그램을 닫고 다시 시도하세요."
+    elif isinstance(e, PermissionError):
+        advice = "이 위치에 쓸 권한이 없습니다. 다른 폴더를 골라 다시 시도하세요."
+    elif errno == 28 or winerror in (39, 112):  # no space left
+        advice = "디스크 공간이 부족합니다. 공간을 비운 뒤 다시 시도하세요."
+    elif isinstance(e, OSError):
+        advice = "파일을 읽거나 쓰지 못했습니다. 경로와 저장 장치를 확인하고 다시 시도하세요."
+    else:
+        advice = "압축 파일이 손상되었을 수 있습니다. '오류 검사'로 확인하거나 원본을 다시 받아 보세요."
+    return f"{advice}\n\n({detail})"
 
 
 def _run(result: str, work) -> int:
@@ -175,7 +200,7 @@ def delete_json(args: list[str]) -> int:
     def work():
         import ziplib
         if not _editable(archive):
-            raise ValueError("파일 삭제는 ZIP 형식에서만 됩니다.")
+            raise UserError("파일 삭제는 ZIP 형식에서만 됩니다. 다른 형식은 풀어서 새로 압축하세요.")
         ziplib.edit_zip(archive, drop=tuple(members), progress=progress, cancel=cancel)
     return _run(result, work)
 
@@ -188,7 +213,7 @@ def add_json(args: list[str]) -> int:
     def work():
         import ziplib
         if not _editable(archive):
-            raise ValueError("파일 추가는 ZIP 형식에서만 됩니다.")
+            raise UserError("파일 추가는 ZIP 형식에서만 됩니다. 다른 형식은 풀어서 새로 압축하세요.")
         ziplib.edit_zip(archive, add=paths, password=_password(options), progress=progress, cancel=cancel,
                         into=_option(options, "--into"))
     return _run(result, work)

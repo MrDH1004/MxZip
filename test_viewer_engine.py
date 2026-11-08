@@ -181,6 +181,20 @@ class ViewerEngineTests(unittest.TestCase):
             self.assertFalse(mxzip_main._open_in_viewer([]))  # no .NET runtime: the Qt window as before
             popen.assert_not_called()
 
+    def test_errors_say_what_to_do(self):
+        import viewer_engine as ve
+        locked = PermissionError(13, "denied")
+        locked.winerror = 32
+        cases = [(PermissionError(13, "denied"), "다른 폴더를 골라"), (locked, "그 프로그램을 닫고"),
+                 (OSError(28, "No space left"), "공간을 비운 뒤"), (ValueError("bad header"), "'오류 검사'"),
+                 (ve.UserError("파일 삭제는 ZIP 형식에서만 됩니다."), "파일 삭제는 ZIP 형식에서만 됩니다.")]
+        for e, advice in cases:
+            with self.subTest(e=e):
+                msg = ve._failure(e)["message"]
+                self.assertIn(advice, msg)
+                if not isinstance(e, ve.UserError):
+                    self.assertIn(str(e), msg)  # the original text stays for support
+
     def test_missing_archive_is_reported(self):
         code, doc = self.run_engine("--list-json", os.path.join(self.root, "없음.zip"), self.result)
         self.assertEqual((code, doc["error"]), (1, "missing"))

@@ -9,11 +9,14 @@ namespace MxZip.Viewer;
 /// </summary>
 sealed class Theme
 {
-    public bool Dark { get; }
+    public bool Dark { get; private set; }
     public Color Window, Panel, Toolbar, Hover, Pressed, Border, Text, Muted, Disabled, Accent, AccentText,
                  Card, CardHover, BannerBack, BannerText, Selection;
 
-    Theme(bool dark)
+    Theme(bool dark) => Use(dark);
+
+    /// <summary>Switches the palette in place (the window re-applies it: 다크 모드 button).</summary>
+    public void Use(bool dark)
     {
         Dark = dark;
         if (dark)
@@ -36,16 +39,15 @@ sealed class Theme
 
     static Color Hex(string s) => ColorTranslator.FromHtml(s);
 
-    public static Theme Load(string theme)
+    public static Theme Load(string theme) => new(IsDark(theme));
+
+    /// <summary>Whether MxZip's theme setting ("system" / "light" / "dark") means dark right now.</summary>
+    public static bool IsDark(string theme) => theme switch
     {
-        bool dark = theme switch
-        {
-            "dark" => true,
-            "light" => false,
-            _ => SystemDark(),
-        };
-        return new Theme(dark);
-    }
+        "dark" => true,
+        "light" => false,
+        _ => SystemDark(),
+    };
 
     static bool SystemDark()
     {
@@ -71,10 +73,12 @@ sealed class Theme
     {
         list.BackColor = Window;
         list.ForeColor = Text;
-        if (!Dark)
-            return;
-        // no DarkMode_* visual style on the list: both dark list styles draw column lines through the whole
-        // list; rows and header are drawn by the viewer instead (only the scroll bars stay light)
+        // dark: Windows' dark Explorer style for dark scroll bars; the column lines it draws below the rows are
+        // painted over by ThemedListView (rows and header are drawn by the viewer)
+        SetWindowTheme(list.Handle, Dark ? "DarkMode_Explorer" : "Explorer", null);
+        if (list is ThemedListView themed)
+            themed.EmptyAreaColor = Window;  // both Explorer styles draw column lines below the rows
+        list.Invalidate();
     }
 
     [DllImport("dwmapi.dll")]

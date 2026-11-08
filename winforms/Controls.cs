@@ -3,69 +3,102 @@ using System.Drawing.Drawing2D;
 namespace MxZip.Viewer;
 
 /// <summary>
-/// A toolbar button: icon above its label, flat, theme colours. A real Button underneath, so it keeps keyboard
-/// activation and the accessibility Invoke action.
+/// The look shared by toolbar buttons and toggles: icon above its label, flat, theme colours, a filled tile while
+/// a toggle is on, and a 2 px accent ring for keyboard focus (at least 3:1 against the toolbar in both themes).
 /// </summary>
-sealed class ToolButton : Button
+sealed class ToolFace
 {
+    readonly Control owner;
     readonly Theme theme;
     readonly Icons.Painter painter;
-    Bitmap? icon, iconDisabled;
-    bool hover, down;
-    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-    public bool Emphasis { get; set; }
+    Bitmap? icon, iconOn, iconDisabled;
+    public bool Hover, Down, Emphasis;
 
-    public ToolButton(Theme theme, string label, Icons.Painter painter)
+    public ToolFace(Control owner, Theme theme, Icons.Painter painter)
     {
+        this.owner = owner;
         this.theme = theme;
         this.painter = painter;
-        Text = label;
-        AccessibleName = label;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
-        FlatStyle = FlatStyle.Flat;
-        FlatAppearance.BorderSize = 0;
-        TabStop = true;
-        Margin = new Padding(2, 4, 2, 4);
-        Cursor = Cursors.Hand;
     }
 
     public void Fit(int dpi)
     {
         float s = dpi / 96f;
-        Size = new Size((int)(68 * s), (int)(58 * s));
+        owner.Size = new Size((int)(68 * s), (int)(58 * s));
         icon?.Dispose();
+        iconOn?.Dispose();
         iconDisabled?.Dispose();
         int px = (int)(24 * s);
         icon = Icons.Render(painter, px, Emphasis ? theme.Accent : theme.Text, theme.Accent);
+        iconOn = Icons.Render(painter, px, theme.Accent, theme.Accent);
         iconDisabled = Icons.Render(painter, px, theme.Disabled, theme.Disabled);
-        Invalidate();
+        owner.Invalidate();
     }
 
-    protected override void OnMouseEnter(EventArgs e) { hover = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { hover = down = false; Invalidate(); base.OnMouseLeave(e); }
-    protected override void OnMouseDown(MouseEventArgs e) { down = true; Invalidate(); base.OnMouseDown(e); }
-    protected override void OnMouseUp(MouseEventArgs e) { down = false; Invalidate(); base.OnMouseUp(e); }
-    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
-
-    protected override void OnPaint(PaintEventArgs e)
+    public void Paint(Graphics g, bool on, bool focusCue)
     {
-        var g = e.Graphics;
-        g.Clear(Parent?.BackColor ?? theme.Toolbar);
+        g.Clear(owner.Parent?.BackColor ?? theme.Toolbar);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        if (Enabled && (hover || down || Focused && ShowFocusCues))
+        float s = owner.DeviceDpi / 96f;
+        var tile = new RectangleF(1, 1, owner.Width - 2, owner.Height - 2);
+        bool enabled = owner.Enabled;
+        if (enabled && (Hover || Down || on))  // a toggle that is on keeps a filled tile: a shape, not only a colour
         {
-            using var b = new SolidBrush(down ? theme.Pressed : theme.Hover);
-            using var path = RoundRect(new RectangleF(1, 1, Width - 2, Height - 2), 6 * DeviceDpi / 96f);
+            using var b = new SolidBrush(Down ? theme.Pressed : Hover ? theme.Hover : theme.Selection);
+            using var path = ToolButton.RoundRect(tile, 6 * s);
             g.FillPath(b, path);
         }
-        var img = Enabled ? icon : iconDisabled;
+        if (enabled && focusCue)
+        {
+            using var ring = new Pen(theme.Accent, Math.Max(2f, 2 * s));
+            using var path = ToolButton.RoundRect(RectangleF.Inflate(tile, -ring.Width / 2, -ring.Width / 2), 6 * s);
+            g.DrawPath(ring, path);
+        }
+        var img = enabled ? (on ? iconOn : icon) : iconDisabled;
         if (img != null)
-            g.DrawImage(img, (Width - img.Width) / 2, (int)(8 * DeviceDpi / 96f));
-        var color = !Enabled ? theme.Disabled : Emphasis ? theme.Accent : theme.Text;
-        var rect = new Rectangle(0, (int)(36 * DeviceDpi / 96f), Width, (int)(18 * DeviceDpi / 96f));
-        TextRenderer.DrawText(g, Text, Font, rect, color,
+            g.DrawImage(img, (owner.Width - img.Width) / 2, (int)(8 * s));
+        var color = !enabled ? theme.Disabled : Emphasis || on ? theme.Accent : theme.Text;
+        var rect = new Rectangle(0, (int)(36 * s), owner.Width, (int)(18 * s));
+        TextRenderer.DrawText(g, owner.Text, owner.Font, rect, color,
                               TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }
+
+    public static void Setup(ButtonBase b, string label)
+    {
+        b.Text = label;
+        b.AccessibleName = label;
+        b.FlatStyle = FlatStyle.Flat;
+        b.FlatAppearance.BorderSize = 0;
+        b.TabStop = true;
+        b.Margin = new Padding(2, 4, 2, 4);
+        b.Cursor = Cursors.Hand;
+    }
+}
+
+/// <summary>A toolbar button. A real Button underneath: keyboard activation and the accessibility Invoke action.</summary>
+sealed class ToolButton : Button
+{
+    readonly ToolFace face;
+
+    /// <summary>The accent label and icon of the view's primary action (새로 압축).</summary>
+    [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+    public bool Emphasis { get => face.Emphasis; set => face.Emphasis = value; }
+
+    public ToolButton(Theme theme, string label, Icons.Painter painter)
+    {
+        face = new ToolFace(this, theme, painter);
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        ToolFace.Setup(this, label);
+    }
+
+    public void Fit(int dpi) => face.Fit(dpi);
+
+    protected override void OnMouseEnter(EventArgs e) { face.Hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { face.Hover = face.Down = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { face.Down = true; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { face.Down = false; Invalidate(); base.OnMouseUp(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+    protected override void OnPaint(PaintEventArgs e) => face.Paint(e.Graphics, false, Focused && ShowFocusCues);
 
     internal static GraphicsPath RoundRect(RectangleF r, float radius)
     {
@@ -78,6 +111,35 @@ sealed class ToolButton : Button
         p.CloseFigure();
         return p;
     }
+}
+
+/// <summary>
+/// A toolbar toggle (전체 보기, 다크 모드). A real CheckBox underneath: Space toggles it and assistive technology
+/// gets a check box with its on / off state and the Toggle action. The click handler decides the new state
+/// (AutoCheck off), so the state always follows what the window really shows.
+/// </summary>
+sealed class ToolToggle : CheckBox
+{
+    readonly ToolFace face;
+
+    public ToolToggle(Theme theme, string label, Icons.Painter painter)
+    {
+        face = new ToolFace(this, theme, painter);
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        Appearance = Appearance.Button;
+        AutoCheck = false;
+        ToolFace.Setup(this, label);
+    }
+
+    public void Fit(int dpi) => face.Fit(dpi);
+
+    protected override void OnMouseEnter(EventArgs e) { face.Hover = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { face.Hover = face.Down = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { face.Down = true; Invalidate(); base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { face.Down = false; Invalidate(); base.OnMouseUp(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+    protected override void OnCheckedChanged(EventArgs e) { Invalidate(); base.OnCheckedChanged(e); }
+    protected override void OnPaint(PaintEventArgs e) => face.Paint(e.Graphics, Checked, Focused && ShowFocusCues);
 }
 
 /// <summary>A large rounded tile of the empty window ("압축 파일 열기", "새로 압축하기").</summary>
@@ -117,9 +179,11 @@ sealed class CardButton : Button
         g.Clear(Parent?.BackColor ?? theme.Window);
         g.SmoothingMode = SmoothingMode.AntiAlias;
         float s = DeviceDpi / 96f;
-        using (var b = new SolidBrush(hover || Focused && ShowFocusCues ? theme.CardHover : theme.Card))
-        using (var pen = new Pen(theme.Border))
-        using (var path = ToolButton.RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 8 * s))
+        bool focusRing = Focused && ShowFocusCues;  // keyboard focus: a 2 px accent ring instead of the border
+        float w = focusRing ? Math.Max(2f, 2 * s) : 1f;
+        using (var b = new SolidBrush(hover ? theme.CardHover : theme.Card))
+        using (var pen = new Pen(focusRing ? theme.Accent : theme.Border, w))
+        using (var path = ToolButton.RoundRect(new RectangleF(w / 2, w / 2, Width - w - 1, Height - w - 1), 8 * s))
         {
             g.FillPath(b, path);
             g.DrawPath(pen, path);
@@ -173,6 +237,20 @@ sealed class Banner : Panel
     }
 
     public void SetMessage(string text) => message.Text = text;
+
+    /// <summary>Re-colours the notice after a dark / light switch (the shared Theme already holds the new palette).</summary>
+    public void ApplyTheme()
+    {
+        var theme = (Theme)Tag!;
+        BackColor = theme.BannerBack;
+        foreach (Control c in Controls)
+            c.BackColor = theme.BannerBack;
+        message.ForeColor = theme.BannerText;
+        Action.LinkColor = Action.ActiveLinkColor = theme.BannerText;
+        CloseButton.BackColor = theme.BannerBack;
+        CloseButton.FlatAppearance.MouseOverBackColor = ControlPaint.Dark(theme.BannerBack, 0.05f);
+        Fit(DeviceDpi);  // the close icon is drawn in the banner's text colour
+    }
 
     public void Fit(int dpi)
     {

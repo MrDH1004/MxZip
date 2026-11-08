@@ -134,6 +134,17 @@ static class Icons
         g.DrawEllipse(pen, 9, 9, 6, 6);
     }
 
+    /// <summary>다크 모드: a crescent moon.</summary>
+    public static void Moon(Graphics g, Pen pen, Brush accent)
+    {
+        using var p = new GraphicsPath();
+        // outer arc of the moon, then the inner arc of the bite back to its start
+        p.AddArc(3.5f, 3.5f, 17, 17, 300, 300);
+        p.AddArc(8.5f, 1.5f, 14, 14, 165, -150);
+        p.CloseFigure();
+        g.DrawPath(pen, p);
+    }
+
     /// <summary>위로: an arrow up to the parent folder.</summary>
     public static void Up(Graphics g, Pen pen, Brush accent)
     {

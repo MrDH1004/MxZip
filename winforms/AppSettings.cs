@@ -36,6 +36,28 @@ sealed class AppSettings
         }
     }
 
+    static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                               "MxZip", "settings.json");
+
+    /// <summary>Writes MxZip's "theme" setting ("dark" / "light"), keeping every other setting as it is.</summary>
+    public static void SaveTheme(string theme)
+    {
+        var node = File.Exists(SettingsPath)
+            ? System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllBytes(SettingsPath)) as System.Text.Json.Nodes.JsonObject
+            : null;
+        node ??= new System.Text.Json.Nodes.JsonObject();
+        node["theme"] = theme;
+        Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
+        string tmp = SettingsPath + ".viewer.tmp";
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,  // Korean stays readable
+        };
+        File.WriteAllText(tmp, node.ToJsonString(options), new System.Text.UTF8Encoding(false));
+        File.Move(tmp, SettingsPath, overwrite: true);
+    }
+
     const string Key = @"Software\MxZip";
 
     /// <summary>Whether the user closed the "make MxZip the ZIP app" notice.</summary>

@@ -85,7 +85,7 @@ static class Engine
         {
             return new EngineJob
             {
-                Result = Task.FromResult(new EngineResult(false, "message", $"MxZip 엔진을 시작하지 못했습니다: {e.Message}")),
+                Result = Task.FromResult(new EngineResult(false, "message", $"MxZip 엔진을 시작하지 못했습니다. MxZip을 다시 설치한 뒤 시도하세요.\n\n({e.Message})")),
                 Cancel = () => { },
             };
         }
@@ -153,7 +153,7 @@ static class Engine
         }
         catch (Exception e)
         {
-            return new EngineResult(false, "message", "MxZip 엔진이 결과를 남기지 않았습니다. " + e.Message);
+            return new EngineResult(false, "message", "작업 결과를 받지 못했습니다. 다시 시도하고, 계속되면 MxZip을 다시 설치하세요.\n\n(" + e.Message + ")");
         }
         finally
         {
