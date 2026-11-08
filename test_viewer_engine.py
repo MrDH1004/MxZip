@@ -147,6 +147,40 @@ class ViewerEngineTests(unittest.TestCase):
         self.assertEqual(doc.get("error"), "cancel", doc)
         self.assertFalse(os.path.exists(self.result + ".cancel"))  # cleaned up
 
+    def test_update_check_is_skipped_from_source(self):
+        code = ("import sys, viewer_engine; viewer_engine.dispatch(['--update-check', %r])") % self.result
+        env = {k: v for k, v in os.environ.items() if k not in ("MXZIP_UPDATE_URL",)}
+        subprocess.run([sys.executable, "-c", code], cwd=HERE, env=env, timeout=60, check=True)
+        with open(self.result, encoding="utf-8") as f:
+            self.assertEqual(json.load(f), {"ok": True, "due": False, "version": ""})
+
+    def test_plain_launch_opens_the_viewer_when_it_can_run(self):
+        import mxzip_main
+        from unittest import mock
+        arc = os.path.join(self.root, "a.zip")
+        formats.create("zip", [self.src], arc, level=5)
+        viewer = r"C:\app\MxZipViewer.exe"
+        cases = [([], True, [viewer]), ([arc], True, [viewer, os.path.abspath(arc)]),
+                 (["--updated"], True, [viewer]),  # the relaunch after an update, with its notice
+                 (["--settings"], False, None), ([arc, arc], False, None),
+                 ([os.path.join(self.root, "없음.zip")], False, None)]
+        for args, opened, cmd in cases:
+            with self.subTest(args=args), mock.patch.object(mxzip_main.sys, "frozen", True, create=True), \
+                    mock.patch.dict(os.environ, {"MXZIP_QT_HOME": ""}), \
+                    mock.patch("assoc.viewer_for", return_value=viewer), \
+                    mock.patch("subprocess.Popen") as popen:
+                self.assertEqual(mxzip_main._open_in_viewer(args), opened)
+                if cmd:
+                    self.assertEqual(popen.call_args.args[0], cmd)
+                    notice = (popen.call_args.kwargs.get("env") or {}).get("MXZIP_VIEWER_NOTICE", "")
+                    self.assertEqual(bool(notice), args == ["--updated"])
+                else:
+                    popen.assert_not_called()
+        with mock.patch.object(mxzip_main.sys, "frozen", True, create=True), \
+                mock.patch("assoc.viewer_for", return_value=None), mock.patch("subprocess.Popen") as popen:
+            self.assertFalse(mxzip_main._open_in_viewer([]))  # no .NET runtime: the Qt window as before
+            popen.assert_not_called()
+
     def test_missing_archive_is_reported(self):
         code, doc = self.run_engine("--list-json", os.path.join(self.root, "없음.zip"), self.result)
         self.assertEqual((code, doc["error"]), (1, "missing"))

@@ -29,6 +29,8 @@ sealed class ViewerForm : Form
     readonly ToolButton openButton, extractButton, newButton, addButton, deleteButton, testButton, infoButton,
                         flatButton, settingsButton;
     readonly Banner banner;
+    readonly Banner updateBanner;
+    string updateVersion = "";
     readonly Panel pathBar = new();
     readonly Button upButton = new();
     readonly Label location = new();
@@ -84,6 +86,12 @@ sealed class ViewerForm : Form
             try { AppSettings.BannerDismissed = true; } catch { }
         };
         banner.Visible = false;
+
+        // the automatic update check MxZip's old home window made: a notice with 지금 업데이트
+        updateBanner = new Banner(theme, "새 버전이 있습니다.", "지금 업데이트");
+        updateBanner.Action.LinkClicked += (_, _) => BeginInvoke(StartUpdate);
+        updateBanner.CloseButton.Click += (_, _) => updateBanner.Visible = false;
+        updateBanner.Visible = false;
 
         // path bar: up button and where in the archive the list is
         pathBar.Dock = DockStyle.Top;
@@ -165,6 +173,7 @@ sealed class ViewerForm : Form
         // docking runs from the last added control: toolbar on top, then banner, path bar; status at the bottom
         // docking starts from the back of the z-order (the last added): status, toolbar, path bar, notice, list
         Controls.Add(content);
+        Controls.Add(updateBanner);
         Controls.Add(banner);
         Controls.Add(pathBar);
         Controls.Add(toolbar);
@@ -190,10 +199,17 @@ sealed class ViewerForm : Form
         Shown += async (_, _) =>
         {
             banner.Visible = !AppSettings.BannerDismissed && !ZipOpensWithMxZip();
+            _ = CheckForUpdate();
             if (archive != null && listing != null)
                 await LoadArchive(archive, listing);
             else
+            {
                 ShowEmpty();
+                // MxZip.exe --updated (the installer's relaunch) hands over "MxZip x.y.z(으)로 업데이트했습니다."
+                string? notice = Environment.GetEnvironmentVariable("MXZIP_VIEWER_NOTICE");
+                if (!string.IsNullOrEmpty(notice))
+                    statusText.Text = notice;
+            }
         };
     }
 
@@ -230,6 +246,7 @@ sealed class ViewerForm : Form
         }
         toolbar.Height = (int)(70 * s);
         banner.Fit(dpi);
+        updateBanner.Fit(dpi);
         pathBar.Height = (int)(30 * s);
         upButton.Width = (int)(32 * s);
         upButton.Image = Icons.Render(Icons.Up, (int)(16 * s), upButton.Enabled ? theme.Text : theme.Disabled, theme.Accent);
@@ -917,6 +934,27 @@ sealed class ViewerForm : Form
             _ = AddPaths(paths);  // onto an open ZIP: added to the folder shown
         else
             Compress(paths);  // anything else: a new archive
+    }
+
+    // ----- update notice -----
+
+    /// <summary>MxZip's automatic update check (when enabled in its settings), in the background.</summary>
+    async Task CheckForUpdate()
+    {
+        var r = await Engine.Run(new[] { "--update-check" }, Array.Empty<string>(), null, null).Result;
+        if (!r.Ok || r.UpdateVersion.Length == 0 || IsDisposed)
+            return;
+        updateVersion = r.UpdateVersion;
+        updateBanner.SetMessage($"새 버전 MxZip {updateVersion}이(가) 나왔습니다.");
+        updateBanner.Visible = true;
+    }
+
+    /// <summary>The unattended update: download, check, run the installer (it closes MxZip and starts it again).</summary>
+    void StartUpdate()
+    {
+        Engine.Forward("--update-now");
+        updateBanner.SetMessage($"MxZip {updateVersion} 내려받는 중... 설치가 끝나면 MxZip이 다시 시작됩니다.");
+        updateBanner.Action.Visible = false;
     }
 
     // ----- default app notice -----

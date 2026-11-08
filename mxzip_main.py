@@ -4,11 +4,41 @@ import os
 import sys
 
 
+def _open_in_viewer(args: list[str]) -> bool:
+    """MxZip.exe with no argument (Start menu, the installer's "launch MxZip") or with one archive: the WinForms
+    window (MxZipViewer.exe, its "drop files here" page or the archive) instead of the Qt window, where it can
+    run (installed exe, .NET Desktop runtime present). Whether it was started; MXZIP_QT_HOME=1 keeps the Qt one."""
+    if not getattr(sys, "frozen", False) or os.environ.get("MXZIP_QT_HOME"):
+        return False
+    env = None
+    if args == ["--updated"] and not os.environ.get("MXZIP_UPDATE_TEST_MARKER"):
+        # the installer's relaunch after an update: the new window, telling which version is now installed
+        from version import __version__
+        env = dict(os.environ, MXZIP_VIEWER_NOTICE=f"MxZip {__version__}(으)로 업데이트했습니다.")
+        args = []
+    if args and (len(args) > 1 or args[0].startswith("-") or not os.path.isfile(args[0])):
+        return False
+    import subprocess
+    import assoc
+    viewer = assoc.viewer_for(sys.executable)
+    if not viewer:
+        return False
+    try:
+        subprocess.Popen([viewer] + [os.path.abspath(a) for a in args], close_fds=True, env=env,
+                         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+        return True
+    except OSError:
+        return False
+
+
 def main() -> int:
     import appcore
     settings = appcore.apply_runtime_settings(strict=False)
     args = sys.argv[1:]
-    if args and args[0] in ("--list-json", "--extract-to", "--test-json", "--delete-json", "--add-json"):
+    if _open_in_viewer(args):
+        return 0
+    if args and args[0] in ("--list-json", "--extract-to", "--test-json", "--delete-json", "--add-json",
+                            "--update-check"):
         # the WinForms viewer's engine calls: no Qt
         import viewer_engine
         code = viewer_engine.dispatch(args)

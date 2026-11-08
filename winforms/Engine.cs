@@ -14,6 +14,7 @@ sealed record EngineResult(bool Ok, string Error, string Message)
     public string Format { get; init; } = "";
     public bool Editable { get; init; }
     public List<string> Bad { get; init; } = new();
+    public string UpdateVersion { get; init; } = "";  // --update-check: a newer release, else ""
 }
 
 /// <summary>A running engine call: its answer, a way to stop it, and its progress (percent, current name).</summary>
@@ -146,6 +147,8 @@ static class Engine
                 Format = root.TryGetProperty("format", out var f) ? f.GetString() ?? "" : "",
                 Editable = root.TryGetProperty("editable", out var ed) && ed.GetBoolean(),
                 Bad = bad,
+                UpdateVersion = root.TryGetProperty("version", out var uv) && uv.ValueKind == JsonValueKind.String
+                    ? uv.GetString() ?? "" : "",
             };
         }
         catch (Exception e)

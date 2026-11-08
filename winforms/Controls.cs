@@ -172,6 +172,8 @@ sealed class Banner : Panel
         Tag = theme;
     }
 
+    public void SetMessage(string text) => message.Text = text;
+
     public void Fit(int dpi)
     {
         float s = dpi / 96f;

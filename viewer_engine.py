@@ -194,8 +194,32 @@ def add_json(args: list[str]) -> int:
     return _run(result, work)
 
 
+def update_check(args: list[str]) -> int:
+    """--update-check RESULT: the automatic update check MxZip's Qt window ran at every start (when enabled in
+    the settings, installed exe only). "due": whether a check ran; "version": a newer release, else ""."""
+    result = args[1]
+
+    def work():
+        from datetime import datetime
+        import appcore
+        import updater
+        if not updater.due(appcore.load_settings()) or not (
+                getattr(sys, "frozen", False) or os.environ.get("MXZIP_UPDATE_URL")):
+            return {"due": False, "version": ""}
+        try:
+            rel = updater.check()
+        except Exception as e:
+            appcore.save_setting("update_last_result", f"업데이트 확인 실패: {e}")
+            raise
+        from version import __version__
+        appcore.save_setting("update_last_checked", datetime.now().astimezone().isoformat(timespec="seconds"))
+        appcore.save_setting("update_last_result", f"새 버전: {rel.version}" if rel else f"최신 버전: {__version__}")
+        return {"due": True, "version": rel.version if rel else ""}
+    return _run(result, work)
+
+
 COMMANDS = {"--list-json": (list_json, 3), "--extract-to": (extract_to, 4), "--test-json": (test_json, 3),
-            "--delete-json": (delete_json, 3), "--add-json": (add_json, 3)}
+            "--delete-json": (delete_json, 3), "--add-json": (add_json, 3), "--update-check": (update_check, 2)}
 
 
 def dispatch(args: list[str]) -> int | None:
