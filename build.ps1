@@ -60,8 +60,18 @@ try {
             "--exclude-module", "PySide6.QtWebEngineCore",
             "--exclude-module", "PySide6.QtQml", "--exclude-module", "PySide6.Qt3DCore",
             "--exclude-module", "setuptools", "--exclude-module", "pkg_resources",
-            "--exclude-module", "_distutils_hack", "--hidden-import", "zpaqarchive", "--hidden-import", "mxzip_gui", "mxzip_main.py")
+            "--exclude-module", "_distutils_hack", "--hidden-import", "zpaqarchive", "--hidden-import", "mxzip_gui",
+            "--hidden-import", "viewer_engine", "mxzip_main.py")
         Sign "$root\dist\MxZip\MxZip.exe"
+        # MxZipViewer.exe: the WinForms archive window (framework-dependent .NET 9, ReadyToRun). Without the .NET
+        # SDK it is left out, and archives keep opening in MxZip.exe (assoc.viewer_for checks for both).
+        if (Get-Command dotnet -ErrorAction SilentlyContinue) {
+            Run dotnet @("publish", "$root\winforms\MxZipViewer.csproj", "-c", "Release", "--self-contained", "false",
+                "-o", "$root\dist\MxZip", "-p:Version=$version", "-nologo")
+            Sign "$root\dist\MxZip\MxZipViewer.exe"
+        } else {
+            Write-Output "dotnet SDK 없음 - MxZipViewer.exe 없이 빌드 (압축 파일은 MxZip.exe 창으로 열림)"
+        }
     }
     if ($Stage -in "all", "installer") {
         $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") |

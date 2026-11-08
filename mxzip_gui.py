@@ -1879,6 +1879,12 @@ def _delete_tree(root, path: str):
 
 def shell_register():
     import winreg
+    if getattr(sys, "frozen", False):  # the installed exe: offered under "Open with" for every archive type
+        try:
+            import assoc
+            assoc.offer()
+        except OSError as e:
+            appcore.log_exception(e)
     settings = load_settings()
     if not settings.get("shell_enabled", True):
         shell_unregister()
@@ -1894,12 +1900,14 @@ def shell_register():
     with winreg.CreateKey(H, APP_KEY) as k:  # read by the shell extension
         winreg.SetValueEx(k, "Command", 0, winreg.REG_SZ, _app_command())
         winreg.SetValueEx(k, "Icon", 0, winreg.REG_SZ, icon)
-        winreg.SetValueEx(k, "ArchiveExts", 0, winreg.REG_SZ,
-                          ";".join(e for e in formats.READ_EXTS if e not in formats.IMAGE_EXTS))
+        winreg.SetValueEx(k, "ArchiveExts", 0, winreg.REG_SZ, ";".join(formats.SHELL_ARCHIVE_EXTS))
         winreg.SetValueEx(k, "ImageExts", 0, winreg.REG_SZ, ";".join(formats.IMAGE_EXTS))
         menu_mask = (int(settings.get("shell_compress", True)) |
                      int(settings.get("shell_extract_here", True)) << 1 |
-                     int(settings.get("shell_extract_folder", True)) << 2)
+                     int(settings.get("shell_extract_folder", True)) << 2 |
+                     int(settings.get("shell_extract_smart", True)) << 3 |
+                     int(settings.get("shell_extract_dialog", True)) << 4 |
+                     0x80)  # the value knows the smart / dialog bits (an older one shows both)
         winreg.SetValueEx(k, "MenuMask", 0, winreg.REG_DWORD, menu_mask)
         winreg.SetValueEx(k, "Language", 0, winreg.REG_SZ, settings.get("language", "ko"))
         winreg.SetValueEx(k, "SeparateArchives", 0, winreg.REG_DWORD,
@@ -1944,10 +1952,19 @@ def shell_unregister():
     _delete_tree(winreg.HKEY_CURRENT_USER, LEGACY_APP_KEY)
 
 
-def quick_extract(win: Main, arc: str, folder: bool, into: str | None = None):
-    """'여기에 / 폴더에 압축 풀기'. into: the folder the shell extension's menu named ("Kings (2)")."""
+QUICK_FLAGS = {"here": "--extract-here", "smart": "--extract-smart", "folder": "--extract-folder"}
+
+
+def quick_extract(win: Main, arc: str, mode, into: str | None = None):
+    """The shell menu's extract items, like the usual archivers':
+      "here"   여기에 풀기: everything next to the archive
+      "smart"  알아서 풀기: next to it when the archive holds one top-level item, else into "<name>\\"
+      "folder" "<name>\\ 에 풀기": always into "<name>\\" (numbered when taken)
+    mode True / False are "folder" / "smart" (the former two-item menu). into: the folder the menu named."""
+    mode = {True: "folder", False: "smart"}.get(mode, mode) if isinstance(mode, bool) else mode
+    folder = mode == "folder"
     here = os.path.dirname(os.path.abspath(into or arc))
-    dest = writable_target(None, here, lambda: ["--extract-folder" if folder else "--extract-here", arc],
+    dest = writable_target(None, here, lambda: [QUICK_FLAGS[mode], arc],
                            lambda w: QFileDialog.getExistingDirectory(w, "풀 위치", _desktop()), folder=here)
     if not dest:
         return
@@ -1964,10 +1981,16 @@ def quick_extract(win: Main, arc: str, folder: bool, into: str | None = None):
         return
     win.arc_path, win.password = arc, pw
     with z:
-        if not folder:
+        if mode == "smart":
             dest = smart_dest(z, dest, arc)
     if win._do_extract(dest, None, "rename") and load_settings().get("extract_open_folder", False):
         open_path(dest)
+
+
+def extract_dialog(win: Main, arc: str):
+    """'MxZip으로 압축 풀기...': MxZip's extract window (where, smart folder, what to do with existing files)."""
+    if win.open_archive(arc):
+        win.extract()
 
 
 def _created_at(pid: int):
@@ -2192,6 +2215,9 @@ def main():
         return 0
     app = _app()
     win = Main()
+    if args[:1] == ["--settings"]:  # the WinForms viewer's 환경설정 button: the settings dialog only
+        win.preferences(args[1] if len(args) > 1 else None)
+        return 0
     if args[:1] == ["--updated"]:
         from version import __version__
         win.show()
@@ -2213,16 +2239,19 @@ def main():
         elif paths and args[0] == "--compress-dialog-list":
             win.new_archive(paths, standalone=True, ask=True)
         return 0
-    if args[:1] == ["--extract-list"] and len(args) >= 3 and args[1] in ("here", "folder"):
-        # from the shell extension: --extract-list here|folder LIST [--out DIR]; DIR is the folder its menu
-        # named ("Kings (2)\에 압축 풀기"), given for a single archive only
+    if args[:1] == ["--extract-list"] and len(args) >= 3 and args[1] in ("here", "smart", "folder", "dialog"):
+        # from the shell extension: --extract-list here|smart|folder|dialog LIST [--out DIR]; DIR is the folder
+        # its menu named ("Kings (2)\ 에 풀기"), given for a single archive only
         paths = []
         for p in read_list(args[2]):  # several volumes of one set (x.part1.rar, x.part2.rar): extract it once
             if formats.first_volume(p).lower() not in [formats.first_volume(q).lower() for q in paths]:
                 paths.append(p)
         into = args[4] if len(args) >= 5 and args[3] == "--out" and len(paths) == 1 else None
         for arc in paths:
-            quick_extract(win, arc, args[1] == "folder", into)
+            if args[1] == "dialog":
+                extract_dialog(win, arc)
+            else:
+                quick_extract(win, arc, args[1], into)
         return 0
     if args and args[0] == "--archive" and len(args) > 1:
         paths = gather_paths("archive", args[1:])
@@ -2230,12 +2259,13 @@ def main():
             return 0
         win.new_archive(paths, standalone=True)
         return 0
-    elif args and args[0] in ("--extract-here", "--extract-folder") and len(args) > 1:
+    elif args and args[0] in QUICK_FLAGS.values() and len(args) > 1:
         paths = gather_paths(args[0].lstrip("-"), args[1:])
         if paths is None:
             return 0
+        mode = next(m for m, flag in QUICK_FLAGS.items() if flag == args[0])
         for arc in paths:
-            quick_extract(win, arc, args[0] == "--extract-folder")
+            quick_extract(win, arc, mode)
         return 0
     elif args:
         win.show()

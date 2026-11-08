@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>MxZipViewer</AssemblyName>
+    <RootNamespace>MxZip.Viewer</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TieredPGO>true</TieredPGO>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ApplicationIcon>..\MxZip.ico</ApplicationIcon>
+    <!-- "Open with" and Task Manager show FileDescription (AssemblyTitle): the app must read as MxZip -->
+    <AssemblyTitle>MxZip</AssemblyTitle>
+    <Product>MxZip</Product>
+    <Company>YMX</Company>
+    <Copyright>YMX</Copyright>
+    <!-- run on a newer .NET Desktop runtime when 9 is not installed (.NET 9 support is ending) -->
+    <RollForward>Major</RollForward>
+  </PropertyGroup>
+
+</Project>

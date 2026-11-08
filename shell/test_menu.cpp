@@ -37,14 +37,22 @@ static bool verify_menu(const wchar_t* path, DWORD mask, bool archive) {
         ok = SUCCEEDED(handler->Initialize(nullptr, data, nullptr));
     if (ok) {
         hr = handler->QueryContextMenu(menu, 0, 1, 100, CMF_NORMAL);
-        int expected = archive ? ((mask & 2) ? 1 : 0) + ((mask & 4) ? 1 : 0) : ((mask & 1) ? 2 : 0);
+        // archives: here (2), smart (8), "<name>\ 에 풀기" (4), the extract window (16), in that order
+        std::vector<const wchar_t*> want;
+        DWORD eff = (mask & 0x80) ? mask : mask | 8 | 16;  // an older value shows the newer items
+        if (archive) {
+            if (eff & 2) want.push_back(L"MxZip.extracthere");
+            if (eff & 8) want.push_back(L"MxZip.extractsmart");
+            if (eff & 4) want.push_back(L"MxZip.extractfolder");
+            if (eff & 16) want.push_back(L"MxZip.extractdlg");
+        }
+        int expected = archive ? (int)want.size() : ((mask & 1) ? 2 : 0);
         ok = SUCCEEDED(hr) && GetMenuItemCount(menu) == expected && HRESULT_CODE(hr) == expected;
         for (int i = 0; ok && i < expected; ++i) {
             wchar_t verb[128] = {};
             ok = SUCCEEDED(handler->GetCommandString(i, GCS_VERBW, nullptr, (LPSTR)verb, 128));
             if (archive)
-                ok = ok && ((lstrcmpW(verb, L"MxZip.extracthere") == 0 && (mask & 2)) ||
-                            (lstrcmpW(verb, L"MxZip.extractfolder") == 0 && (mask & 4)));
+                ok = ok && lstrcmpW(verb, want[i]) == 0;
             else
                 ok = ok && ((lstrcmpW(verb, L"MxZip.compress") == 0 ||
                              lstrcmpW(verb, L"MxZip.compressdlg") == 0) && (mask & 1));
@@ -119,11 +127,16 @@ int wmain(int argc, wchar_t** argv) {
                         KEY_ALL_ACCESS, nullptr, &root, nullptr) != ERROR_SUCCESS) return 4;
     if (RegOverridePredefKey(HKEY_CURRENT_USER, root) != ERROR_SUCCESS) return 5;
     bool ok = true;
-    for (DWORD mask = 0; mask < 8; ++mask) {
+    for (DWORD bits = 0; bits < 32; ++bits) {
+        DWORD mask = bits | 0x80;  // a value written by --register-shell (knows the smart / dialog bits)
         bool result = verify_menu(argv[1], mask, false) && verify_menu(argv[2], mask, true);
-        printf("%s native menu mask %lu\n", result ? "PASS" : "FAIL", mask);
+        printf("%s native menu mask 0x%lX\n", result ? "PASS" : "FAIL", mask);
         ok = ok && result;
     }
+    // an older value (before the smart / dialog items) still shows both of them
+    bool legacy = verify_menu(argv[2], 7, true) && verify_menu(argv[2], 2, true);
+    printf("%s native menu legacy mask\n", legacy ? "PASS" : "FAIL");
+    ok = ok && legacy;
     std::wstring readme = argv[1], license = readme.substr(0, last_sep(readme) + 1) + L"LICENSE";
     for (DWORD separate = 0; separate < 2; ++separate) {
         bool result = verify_multi(readme, license, separate);

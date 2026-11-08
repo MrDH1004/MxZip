@@ -24,6 +24,7 @@ DEFAULTS = {
     "extract_open_folder": False, "low_priority": False, "worker_threads": 0,
     "temp_dir": "", "shell_enabled": True, "shell_compress": True,
     "shell_extract_here": True, "shell_extract_folder": True,
+    "shell_extract_smart": True, "shell_extract_dialog": True,
     "shell_multi": "combined", "auto_update": True,
 }
 _SETTINGS_LOCK = threading.RLock()

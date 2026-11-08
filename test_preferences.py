@@ -264,6 +264,7 @@ class PreferencesTests(unittest.TestCase):
             "extract_open_folder": True, "low_priority": True, "worker_threads": 4,
             "temp_dir": str(Path(self.folder.name) / "임시"), "shell_enabled": False, "shell_compress": False,
             "shell_extract_here": False, "shell_extract_folder": False,
+            "shell_extract_smart": False, "shell_extract_dialog": False,
             "shell_multi": "separate", "auto_update": False,
         }
         appcore.save_settings(dict(settings, show_details=True, update_last_result="기존 결과"))

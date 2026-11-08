@@ -26,7 +26,8 @@ class ShellSettingsTests(unittest.TestCase):
                 mock.patch("winreg.CreateKey", return_value=key), \
                 mock.patch("winreg.SetValueEx", side_effect=lambda *args: writes.append(args)):
             gui.shell_register()
-        self.assertTrue(any(args[1] == "MenuMask" and args[4] == 2 for args in writes))
+        # here (2) + smart (8) and dialog (16), on by default, + 0x80: the value knows the smart / dialog bits
+        self.assertTrue(any(args[1] == "MenuMask" and args[4] == 2 | 8 | 16 | 0x80 for args in writes))
         self.assertTrue(any(args[1] == "Language" and args[4] == "en" for args in writes))
         commands = [args[4] for args in writes if args[1] == "" and isinstance(args[4], str)]
         self.assertTrue(any("--extract-here" in command for command in commands))

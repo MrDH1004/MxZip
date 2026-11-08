@@ -42,9 +42,33 @@ def exe_path() -> str:
     return sys.executable if getattr(sys, "frozen", False) else os.path.abspath(sys.argv[0])
 
 
+VIEWER = "MxZipViewer.exe"  # the WinForms archive window, next to MxZip.exe (framework-dependent .NET 9)
+
+
+def _desktop_runtime_ok(major: int = 9) -> bool:
+    """Whether a .NET Desktop Runtime the viewer can run on is installed: major or newer (it rolls forward,
+    RollForward=Major); else Windows would show an error dialog instead of the archive. Looks where the .NET
+    host itself looks: <dotnet root>\\shared."""
+    roots = [os.environ.get("DOTNET_ROOT", ""), os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "dotnet")]
+    for root in filter(None, roots):
+        shared = os.path.join(root, "shared", "Microsoft.WindowsDesktop.App")
+        try:
+            if any(v.split(".")[0].isdigit() and int(v.split(".")[0]) >= major for v in os.listdir(shared)):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def viewer_for(exe: str) -> str | None:
+    """MxZipViewer.exe beside exe when it can run here: double-clicking an archive opens that fast window."""
+    viewer = os.path.join(os.path.dirname(os.path.abspath(exe)), VIEWER)
+    return viewer if os.path.isfile(viewer) and _desktop_runtime_ok() else None
+
+
 def open_command(exe: str) -> str:
     if getattr(sys, "frozen", False) or exe.lower().endswith(".exe") and not exe.lower().endswith("python.exe"):
-        return f'"{exe}" "%1"'
+        return f'"{viewer_for(exe) or exe}" "%1"'
     return f'"{sys.executable}" "{exe}" "%1"'
 
 
@@ -118,17 +142,13 @@ def notify():
     ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)  # SHCNE_ASSOCCHANGED, SHCNF_IDLIST
 
 
-def register(exts=None, exe: str | None = None, icon: str | None = None) -> list[str]:
-    """Register MxZip for exts. Returns the extensions Windows still does not open with MxZip: the user
-    must pick MxZip for them in Settings > Default apps (or "Open with" > Always).
+def _app_key(exe: str) -> str:
+    return rf"Software\Classes\Applications\{os.path.basename(exe)}"
 
-    Windows 11 does not let a program become the handler of the archive types it opens itself (.zip, .7z,
-    .rar, .tar, .gz, ...): once a new app is registered for one, it treats the type as having no handler
-    (blank icon, "Open with" dialog) until the user picks an app, whatever the extension's default says."""
-    exts = _extensions(exts)
-    if not exts:
-        return []
-    exe = exe or exe_path()
+
+def _publish(exts, exe: str, icon: str | None, open_with=None) -> None:
+    """ProgID per extension, MxZip under the "Open with" of the extensions in open_with (all when None), and
+    Capabilities for Default apps. Leaves every extension's default alone."""
     icon = icon or (exe + ",0" if exe.lower().endswith(".exe") else exe)
     cmd = open_command(exe)
     remove_legacy()
@@ -141,8 +161,54 @@ def register(exts=None, exe: str | None = None, icon: str | None = None) -> list
         _set(base, "", TYPES.get(ext, ext.upper().lstrip(".") + " 파일"))
         _set(base + r"\DefaultIcon", "", icon)
         _set(base + r"\shell\open\command", "", cmd)
-        _set(rf"Software\Classes\{ext}\OpenWithProgids", pid, "")
+        if open_with is None or ext in open_with:
+            _set(rf"Software\Classes\{ext}\OpenWithProgids", pid, "")
         _set(CAP_KEY + r"\FileAssociations", ext, pid)
+
+
+def _user_chose(ext: str) -> bool:
+    """Whether the user picked an installed app for ext ("Always" / Default apps). Only that choice keeps
+    Windows from switching the type to the "How do you want to open?" dialog when a new app is listed."""
+    pid = _get(rf"{FILE_EXTS}\{ext}\UserChoice", "ProgId")
+    return bool(pid) and _progid_exists(pid)
+
+
+def offer(exe: str | None = None, icon: str | None = None) -> None:
+    """Offer MxZip in "Open with" for every archive type without making it the default of any: that stays the
+    user's choice (or the installer's "open with MxZip" task).
+
+    Where the user has picked an app, MxZip is listed with the extension (OpenWithProgids: a recommended
+    app). Elsewhere a newly listed app would make Windows drop the working default and ask the user on the
+    next open, so MxZip is only declared as able to open the type (Applications\\<exe>\\SupportedTypes: it
+    appears among the other apps); extensions MxZip itself is associated with keep their listing."""
+    exe = exe or exe_path()
+    exts = list(TYPES)
+    listed = {ext for ext in exts if _user_chose(ext) or _get(rf"Software\Classes\{ext}") == progid(ext)}
+    _publish(exts, exe, icon, open_with=listed)
+    app = _app_key(exe)
+    _set(app, "FriendlyAppName", APP)
+    _set(app + r"\DefaultIcon", "", icon or (exe + ",0" if exe.lower().endswith(".exe") else exe))
+    _set(app + r"\shell\open\command", "", open_command(exe))
+    for ext in exts:
+        _set(app + r"\SupportedTypes", ext, "")
+    notify()
+
+
+def register(exts=None, exe: str | None = None, icon: str | None = None) -> list[str]:
+    """Register MxZip for exts. Returns the extensions Windows still does not open with MxZip: the user
+    must pick MxZip for them in Settings > Default apps (or "Open with" > Always).
+
+    Windows 11 does not let a program become the handler of the archive types it opens itself (.zip, .7z,
+    .rar, .tar, .gz, ...): once a new app is registered for one, it treats the type as having no handler
+    (blank icon, "Open with" dialog) until the user picks an app, whatever the extension's default says."""
+    exts = _extensions(exts)
+    if not exts:
+        return []
+    exe = exe or exe_path()
+    _publish(exts, exe, icon)
+    for ext in exts:
+        pid = progid(ext)
+        base = rf"Software\Classes\{pid}"
         cls = rf"Software\Classes\{ext}"
         cur = _get(cls)
         if cur != pid:
@@ -189,12 +255,15 @@ def unregister(exts=None) -> None:
         remove_legacy()
         _del_tree(CAP_KEY.rsplit("\\", 1)[0])  # Software\MxZipAssoc
         _del_value(REG_APPS, APP)
+        _del_tree(_app_key(exe_path()))  # offer()'s "Open with" entry
     notify()
 
 
 def enabled(exts=None) -> bool:
-    """Whether MxZip's per-user ProgID is registered for every requested extension."""
-    return all(_get(rf"Software\Classes\{progid(ext)}") is not None for ext in _extensions(exts))
+    """Whether every requested extension is associated with MxZip (its per-user default is MxZip's ProgID).
+    Being merely offered under "Open with" (offer()) does not count."""
+    return all(_get(rf"Software\Classes\{progid(ext)}") is not None and
+               _get(rf"Software\Classes\{ext}") == progid(ext) for ext in _extensions(exts))
 
 
 def effective(ext: str) -> tuple[str, str]:
@@ -210,11 +279,12 @@ def effective(ext: str) -> tuple[str, str]:
 
 def status(exts=None, exe: str | None = None) -> dict:
     """ext -> (is_mxzip, app name) as Windows resolves it now."""
-    exe = os.path.normcase(os.path.abspath(exe or exe_path()))
+    exe = exe or exe_path()
+    mine = {os.path.normcase(os.path.abspath(p)) for p in (exe, os.path.join(os.path.dirname(exe), VIEWER))}
     res = {}
     for ext in _extensions(exts):
         path, name = effective(ext)
-        res[ext] = (bool(path) and os.path.normcase(os.path.abspath(path)) == exe, name or "(없음)")
+        res[ext] = (bool(path) and os.path.normcase(os.path.abspath(path)) in mine, name or "(없음)")
     return res
 
 

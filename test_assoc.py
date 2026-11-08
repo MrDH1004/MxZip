@@ -90,6 +90,48 @@ class AssocTests(unittest.TestCase):
         self.assertEqual(assoc._get(rf"Software\Classes\{EXT}"), "Other.yzt")
         self.assertIn("notepad", assoc.effective(EXT)[0].lower())
 
+    def _offer(self, chose):
+        app = assoc._app_key(EXE)
+        self.addCleanup(assoc._del_tree, app)
+        assoc._set(r"Software\Classes\Other.yzt\shell\open\command", "", r'"C:\Windows\notepad.exe" "%1"')
+        assoc._set(rf"Software\Classes\{EXT}", "", "Other.yzt")
+        with mock.patch.object(assoc, "TYPES", {EXT: "YZT 테스트 파일"}), \
+                mock.patch.object(assoc, "_user_chose", lambda ext: chose):
+            assoc.offer(exe=EXE)
+        self.assertEqual(assoc._get(app + r"\SupportedTypes", EXT), "")
+        self.assertEqual(assoc._get(rf"{assoc.CAP_KEY}\FileAssociations", EXT), "MxZip" + EXT)
+        self.assertEqual(assoc._get(rf"Software\Classes\{EXT}"), "Other.yzt")  # default untouched
+        self.assertFalse(assoc.enabled([EXT]))  # offered is not associated
+
+    def test_offer_without_a_user_choice_keeps_the_working_default(self):
+        self._offer(chose=False)
+        self.assertIsNone(assoc._get(rf"Software\Classes\{EXT}\OpenWithProgids", "MxZip" + EXT))
+        self.assertIn("notepad", assoc.effective(EXT)[0].lower())  # Windows does not start asking
+        assoc.register([EXT], exe=EXE)
+        self.assertTrue(assoc.enabled([EXT]))
+        assoc.unregister([EXT])
+        self.assertEqual(assoc._get(rf"Software\Classes\{EXT}"), "Other.yzt")
+
+    def test_offer_lists_mxzip_where_the_user_chose_an_app(self):
+        self._offer(chose=True)
+        self.assertEqual(assoc._get(rf"Software\Classes\{EXT}\OpenWithProgids", "MxZip" + EXT), "")
+
+    def test_viewer_opens_archives_when_its_runtime_is_installed(self):
+        viewer = os.path.join(os.path.dirname(EXE), assoc.VIEWER)
+        with mock.patch.object(assoc.sys, "frozen", True, create=True), \
+                mock.patch.object(assoc.os.path, "isfile", lambda p: p == viewer), \
+                mock.patch.object(assoc, "_desktop_runtime_ok", lambda major=9: True):
+            self.assertEqual(assoc.open_command(EXE), f'"{viewer}" "%1"')
+        with mock.patch.object(assoc.sys, "frozen", True, create=True), \
+                mock.patch.object(assoc.os.path, "isfile", lambda p: p == viewer), \
+                mock.patch.object(assoc, "_desktop_runtime_ok", lambda major=9: False):
+            self.assertEqual(assoc.open_command(EXE), f'"{EXE}" "%1"')  # no runtime: the Qt window
+
+    def test_status_counts_the_viewer_as_mxzip(self):
+        viewer = os.path.join(os.path.dirname(EXE), assoc.VIEWER)
+        with mock.patch.object(assoc, "effective", lambda ext: (viewer, "MxZip")):
+            self.assertTrue(assoc.status([EXT], EXE)[EXT][0])
+
     def test_former_name_association_is_replaced(self):
         # what an install under the former name left: its ProgID as the extension's default, over notepad's
         legacy = "MxZipLegacyTest" + EXT

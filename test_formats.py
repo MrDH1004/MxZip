@@ -96,6 +96,13 @@ class FormatTests(unittest.TestCase):
         expected = {".zip", ".zipx", ".exe", ".tar", ".tgz", ".lzh", ".iso", ".7z", ".gz", ".xz", ".zpaq"}
         self.assertTrue(expected <= set(formats.READ_EXTS), sorted(set(formats.READ_EXTS) & expected))
 
+    def test_exe_gets_only_compress_in_the_explorer_menu(self):
+        # the shell extension offers extracting only for ArchiveExts / ImageExts
+        self.assertNotIn(".exe", formats.SHELL_ARCHIVE_EXTS)
+        self.assertNotIn(".exe", formats.IMAGE_EXTS)
+        self.assertIn(".exe", formats.READ_EXTS)  # still opened from MxZip itself
+        self.assertIn(".zip", formats.SHELL_ARCHIVE_EXTS)
+
     def test_zpaq_magic_is_detected(self):
         path = os.path.join(self.root, "sample.zpaq")
         with open(path, "wb") as f:

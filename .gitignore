@@ -28,3 +28,5 @@ tools/
 # local AI work notes, kept out of the public repo
 CLAUDE.md
 memory/
+winforms/bin/
+winforms/obj/

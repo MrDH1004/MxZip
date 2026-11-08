@@ -155,12 +155,12 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
     files, z = build_zip(t)
     t0 = time.time()
     r = run_verb(KEY_HERE, z, env_for(local))
-    check("exe '여기에 압축 풀기': exit 0", r.returncode == 0, (r.returncode, r.stderr[-300:]))
-    out = os.path.join(t, "pack")
-    check("exe '여기에 압축 풀기': smart folder pack/ with identical files",
+    check("exe '여기에 풀기': exit 0", r.returncode == 0, (r.returncode, r.stderr[-300:]))
+    out = t  # 여기에 풀기: right next to the archive, no folder (알아서 풀기 makes one for several top items)
+    check("exe '여기에 풀기': files next to the archive, identical",
           os.path.exists(os.path.join(out, "b.bin")) and sha(os.path.join(out, "b.bin")) == sha(files["b.bin"])
           and os.path.exists(os.path.join(out, "하위 폴더", "c.txt")), os.listdir(t))
-    check("exe '여기에 압축 풀기': error.log empty", log_text(local) == "", log_text(local)[-300:])
+    check("exe '여기에 풀기': error.log empty", log_text(local) == "", log_text(local)[-300:])
     print(f"     ({time.time() - t0:.1f}s incl. startup)")
 
 with tempfile.TemporaryDirectory(prefix="yze_") as t:
@@ -265,7 +265,7 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
     # extract items: only for archives, in the extract section (before the compress items), the usual archiver style
     # "<folder>\에 압축 풀기" naming the real target, numbered when that folder exists
     verbs = [it[2] for it in probe("list", [z])[1] if len(it) > 2 and it[2].startswith("MxZip.")]
-    check("archive: extract items only, no compress items", verbs == ["MxZip.extracthere", "MxZip.extractfolder"], verbs)
+    check("archive: extract items only, no compress items", verbs == ["MxZip.extracthere", "MxZip.extractsmart", "MxZip.extractfolder", "MxZip.extractdlg"], verbs)
     check("non-archive: no extract items", not [it for it in probe("list", [files["b.bin"]])[1]
                                                   if len(it) > 2 and it[2].startswith("MxZip.extract")])
     import shutil  # noqa: E402
@@ -274,27 +274,28 @@ with tempfile.TemporaryDirectory(prefix="yze_") as t:
     iso = os.path.join(t, "disc.iso")
     open(iso, "wb").close()
     yv = lambda p: [it[2] for it in probe("list", [p])[1] if len(it) > 2 and it[2].startswith("MxZip.")]
-    check("EGG (read via unegg): extract items only", yv(egg) == ["MxZip.extracthere", "MxZip.extractfolder"], yv(egg))
+    check("EGG (read via unegg): extract items only", yv(egg) == ["MxZip.extracthere", "MxZip.extractsmart", "MxZip.extractfolder", "MxZip.extractdlg"], yv(egg))
     check("ISO (disk image): extract items and compress items",
-          yv(iso) == ["MxZip.extracthere", "MxZip.extractfolder", "MxZip.compress", "MxZip.compressdlg"], yv(iso))
+          yv(iso) == ["MxZip.extracthere", "MxZip.extractsmart", "MxZip.extractfolder", "MxZip.extractdlg",
+                      "MxZip.compress", "MxZip.compressdlg"], yv(iso))
     code, _, raw = probe("invoke:MxZip.extractfolder", [egg], env)
     got = os.path.join(t, "sample", "hello.txt")
     check("invoke '폴더에 압축 풀기' on an EGG: extracted by the bundled unegg", code == 0 and wait_done(got),
           (code, raw[-300:], os.listdir(t)))
     label = lambda: [it[0] for it in probe("list", [z])[1] if len(it) > 2 and it[2] == "MxZip.extractfolder"]
-    check("folder item names the folder: 'pack\\에 압축 풀기'", label() == ["pack\\에 압축 풀기"], label())
+    check("folder item names the folder: 'pack\\ 에 풀기(&E)'", label() == ["pack\\ 에 풀기(&E)"], label())
     code, _, raw = probe("invoke:MxZip.extractfolder", [z], env)
     got = os.path.join(t, "pack", "b.bin")
     check("invoke '폴더에 압축 풀기': pack\\ with identical files", code == 0 and wait_done(got)
           and sha(got) == sha(files["b.bin"]), (code, raw[-300:], os.listdir(t)))
-    check("folder exists -> 'pack (2)\\에 압축 풀기'", label() == ["pack (2)\\에 압축 풀기"], label())
+    check("folder exists -> 'pack (2)\\ 에 풀기(&E)'", label() == ["pack (2)\\ 에 풀기(&E)"], label())
     code, _, raw = probe("invoke:MxZip.extractfolder", [z], env)
     got = os.path.join(t, "pack (2)", "b.bin")
     check("invoke again: extracted into a new 'pack (2)', not mixed into pack", code == 0 and wait_done(got)
           and sha(got) == sha(files["b.bin"]), (code, raw[-300:], os.listdir(t)))
-    code, _, raw = probe("invoke:MxZip.extracthere", [z], env)  # 3 top items -> smart folder, numbered too
+    code, _, raw = probe("invoke:MxZip.extractsmart", [z], env)  # 3 top items -> smart folder, numbered too
     got = os.path.join(t, "pack (3)", "b.bin")
-    check("invoke '여기에 압축 풀기': smart folder numbered 'pack (3)'", code == 0 and wait_done(got)
+    check("invoke '알아서 풀기': smart folder numbered 'pack (3)'", code == 0 and wait_done(got)
           and sha(got) == sha(files["b.bin"]), (code, raw[-300:], os.listdir(t)))
     time.sleep(1)
     left = [f for f in set(os.listdir(os.environ.get("TEMP"))) - before if f.startswith("mxzip_sel_")]

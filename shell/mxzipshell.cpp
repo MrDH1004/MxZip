@@ -1,8 +1,10 @@
 // MxZip Explorer context-menu handler. When every selected item is an archive (an extension listed in
 // HKCU\Software\MxZip\ArchiveExts), first the extract items, so they sit in the menu's extract section next to
 // Windows' and the third-party archiver's instead of the static-verb group at the top:
-//   2 "여기에 압축 풀기": <Command> --extract-list here <list>
-//   3 "폴더에 압축 풀기": <Command> --extract-list folder <list>
+//   2 "여기에 풀기": <Command> --extract-list here <list>
+//   5 "알아서 풀기": <Command> --extract-list smart <list>
+//   3 "<name>\ 에 풀기": <Command> --extract-list folder <list> --out <folder>
+//   6 "MxZip으로 압축 풀기...": <Command> --extract-list dialog <list>
 // otherwise (not all archives) the compress items:
 //   0 "<name>.zip으로 압축하기 - MxZip": compresses at once. The handler decides the output path (same "(2)" rule
 //     as MxZip's unique_path) so the label and the file always agree: <Command> --archive-list <list> --out <zip>
@@ -22,11 +24,11 @@
 
 // {E856C547-DF4F-438A-9357-3225756E4D24}
 static const CLSID CLSID_MxZipMenu = {0xe856c547, 0xdf4f, 0x438a, {0x93, 0x57, 0x32, 0x25, 0x75, 0x6e, 0x4d, 0x24}};
-enum { CMD_COMPRESS, CMD_DIALOG, CMD_HERE, CMD_FOLDER, CMD_EACH, N_CMDS };
+enum { CMD_COMPRESS, CMD_DIALOG, CMD_HERE, CMD_FOLDER, CMD_EACH, CMD_SMART, CMD_EXTRACTDLG, N_CMDS };
 static const wchar_t* const VERBS_W[] = {L"MxZip.compress", L"MxZip.compressdlg", L"MxZip.extracthere", L"MxZip.extractfolder",
-                                         L"MxZip.compresseach"};
+                                         L"MxZip.compresseach", L"MxZip.extractsmart", L"MxZip.extractdlg"};
 static const char* const VERBS_A[] = {"MxZip.compress", "MxZip.compressdlg", "MxZip.extracthere", "MxZip.extractfolder",
-                                      "MxZip.compresseach"};
+                                      "MxZip.compresseach", "MxZip.extractsmart", "MxZip.extractdlg"};
 
 static HINSTANCE g_inst;
 static long g_refs;
@@ -99,11 +101,15 @@ static std::wstring read_command() {
     return buf;
 }
 
+// MenuMask bits: 1 compress, 2 "여기에 풀기", 4 "<folder>\에 풀기", 8 "알아서 풀기", 16 "MxZip으로 압축 풀기...".
+// 0x80 marks a value that knows bits 8 and 16; an older value (written before them) shows both.
 static DWORD menu_mask() {
-    DWORD value = 7, cb = sizeof(value);
+    DWORD value = 0x9F, cb = sizeof(value);
     LSTATUS result = RegGetValueW(HKEY_CURRENT_USER, L"Software\\MxZip", L"MenuMask",
                                  RRF_RT_REG_DWORD, nullptr, &value, &cb);
-    return result == ERROR_SUCCESS ? value : 7;
+    if (result != ERROR_SUCCESS)
+        return 0x9F;
+    return value & 0x80 ? value : value | 8 | 16;
 }
 
 static bool english_menu() {
@@ -301,22 +307,30 @@ public:
             extractable = extractable && k != 0;
             archives = archives && k == 1;
         }
-        if (extractable) {
+        if (extractable) {  // the usual archiver set: here, smart, "<name>\", and the extract window
             if (enabled & 2) {
-            cmds_.push_back(CMD_HERE);
-            labels.push_back(english ? L"Extract here" : L"여기에 압축 풀기");
+                cmds_.push_back(CMD_HERE);
+                labels.push_back(english ? L"Extract &here" : L"여기에 풀기(&Z)");
+            }
+            if (enabled & 8) {  // one top-level item: next to the archive; several: into "<name>\"
+                cmds_.push_back(CMD_SMART);
+                labels.push_back(english ? L"Smart e&xtract" : L"알아서 풀기(&Z)");
             }
             if (enabled & 4) {
-            cmds_.push_back(CMD_FOLDER);
-            if (paths_.size() == 1) {  // like the third-party archiver's "Kings (2)\ 에 풀기": the real folder, numbered if taken
-                into_ = extract_dir(paths_[0]);
-                std::wstring n = file_name(into_);
-                if (n.size() > 52)
-                    n = n.substr(0, 24) + L"…" + n.substr(n.size() - 24);
-                labels.push_back(english ? L"Extract to " + escape_amp(n) + L"\\" : escape_amp(n) + L"\\에 압축 풀기");
-            } else {
-                labels.push_back(english ? L"Extract to separate folders" : L"각각의 폴더에 압축 풀기");
+                cmds_.push_back(CMD_FOLDER);
+                if (paths_.size() == 1) {  // "Kings (2)\ 에 풀기": the real folder, numbered if taken
+                    into_ = extract_dir(paths_[0]);
+                    std::wstring n = file_name(into_);
+                    if (n.size() > 52)
+                        n = n.substr(0, 24) + L"…" + n.substr(n.size() - 24);
+                    labels.push_back(english ? L"Extract to " + escape_amp(n) + L"\\(&E)" : escape_amp(n) + L"\\ 에 풀기(&E)");
+                } else {
+                    labels.push_back(english ? L"Extract to separate folders(&E)" : L"각각의 폴더에 풀기(&E)");
+                }
             }
+            if (enabled & 16) {
+                cmds_.push_back(CMD_EXTRACTDLG);
+                labels.push_back(english ? L"Extract with MxZip(&B)..." : L"MxZip으로 압축 풀기(&B)...");
             }
         }
         if (!out_.empty() && !archives && (enabled & 1)) {  // archives get the extract items only
@@ -394,6 +408,8 @@ public:
                                            (which == CMD_EACH ? L" --each" : L"")
                           : which == CMD_DIALOG   ? cmd + L" --compress-dialog-list \"" + list + L"\""
                           : which == CMD_HERE     ? cmd + L" --extract-list here \"" + list + L"\""
+                          : which == CMD_SMART    ? cmd + L" --extract-list smart \"" + list + L"\""
+                          : which == CMD_EXTRACTDLG ? cmd + L" --extract-list dialog \"" + list + L"\""
                                                   : cmd + L" --extract-list folder \"" + list + L"\"" +
                                                         (into_.empty() ? L"" : L" --out \"" + into_ + L"\"");
         std::wstring dir = paths_[0].substr(0, last_sep(paths_[0]) + 1);
@@ -414,10 +430,14 @@ public:
         int c = cmds_[id];
         static const wchar_t* const HELP_W[] = {L"선택한 항목을 ZIP 파일로 바로 압축합니다", L"형식과 암호 등을 골라 압축합니다",
                                                 L"압축 파일이 있는 폴더에 풉니다", L"압축 파일 이름의 폴더에 풉니다",
-                                                L"선택한 항목을 각각 ZIP 파일로 압축합니다"};
+                                                L"선택한 항목을 각각 ZIP 파일로 압축합니다",
+                                                L"최상위 항목이 하나면 그 자리에, 여럿이면 폴더를 만들어 풉니다",
+                                                L"풀 위치와 옵션을 골라 풉니다"};
         static const char* const HELP_A[] = {"Compress the selection to a ZIP file", "Choose format and options, then compress",
                                              "Extract next to the archive", "Extract into a folder named after the archive",
-                                             "Compress each selected item to its own ZIP file"};
+                                             "Compress each selected item to its own ZIP file",
+                                             "One top-level item: next to the archive; several: into a new folder",
+                                             "Choose where and how to extract"};
         switch (type) {
         case GCS_VERBW:
             return StringCchCopyW((LPWSTR)name, cch, VERBS_W[c]);

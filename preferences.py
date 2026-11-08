@@ -295,7 +295,9 @@ class PreferencesDialog(QDialog):
         master = self._check(form, "shell_enabled", "탐색기 우클릭 메뉴 사용")
         children = [self._check(form, "shell_compress", "압축하기"),
                     self._check(form, "shell_extract_here", "여기에 풀기"),
-                    self._check(form, "shell_extract_folder", "폴더에 풀기")]
+                    self._check(form, "shell_extract_smart", "알아서 풀기"),
+                    self._check(form, "shell_extract_folder", "폴더에 풀기"),
+                    self._check(form, "shell_extract_dialog", "MxZip으로 압축 풀기...")]
         multi = self._combo(form, "shell_multi", "여러 파일 선택 시",
                             [("하나로 모아서 처리", "combined"), ("파일별로 처리", "separate")])
         master.toggled.connect(lambda on: [widget.setEnabled(on) for widget in children + [multi]])
@@ -370,7 +372,8 @@ class PreferencesDialog(QDialog):
             else:
                 widget.setText(value)
         enabled = self.controls["shell_enabled"].isChecked()
-        for key in ("shell_compress", "shell_extract_here", "shell_extract_folder", "shell_multi"):
+        for key in ("shell_compress", "shell_extract_here", "shell_extract_smart", "shell_extract_folder",
+                    "shell_extract_dialog", "shell_multi"):
             self.controls[key].setEnabled(enabled)
         fmt = formats.BY_ID.get(self.controls["compress_format"].currentData())
         self.controls["compress_split"].setEnabled(bool(fmt and fmt.split))

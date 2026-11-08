@@ -8,6 +8,12 @@ def main() -> int:
     import appcore
     settings = appcore.apply_runtime_settings(strict=False)
     args = sys.argv[1:]
+    if args and args[0] in ("--list-json", "--extract-to", "--test-json", "--delete-json", "--add-json"):
+        # the WinForms viewer's engine calls: no Qt
+        import viewer_engine
+        code = viewer_engine.dispatch(args)
+        if code is not None:
+            return code
     job = None
     if args[:1] == ["--archive-list"] and len(args) >= 4 and args[2] == "--out":
         # Keep the selection available for elevation or GUI fallback.

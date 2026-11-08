@@ -28,6 +28,11 @@ jobs:
         with:
           python-version: "3.14"
 
+      # MxZipViewer.exe (WinForms archive window); build.ps1 leaves it out when no SDK is found
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -64,7 +69,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           MXZIP_NO_UPDATE: "1"
-        run: python -W ignore -m unittest test_release_version test_ziprepair test_ziplib test_zipwriter test_formats test_nativearchive test_moreformats test_updater test_archive_accel test_zip_native test_7z_native test_zip_compress_native test_zip_extract_perf test_seven_io_performance test_zipwriter_performance test_package_native test_hard_exit test_sevenzip_header
+        run: python -W ignore -m unittest test_release_version test_ziprepair test_ziplib test_zipwriter test_formats test_nativearchive test_moreformats test_updater test_archive_accel test_zip_native test_7z_native test_zip_compress_native test_zip_extract_perf test_seven_io_performance test_zipwriter_performance test_package_native test_hard_exit test_sevenzip_header test_viewer_engine
 
       - name: Preferences tests
         env:
@@ -94,6 +99,7 @@ jobs:
           $marker = Join-Path $env:RUNNER_TEMP "MxZip-version-smoke.txt"
           $env:MXZIP_UPDATE_TEST_MARKER = $marker
           $env:MXZIP_NO_UPDATE = "1"
+          if (-not (Test-Path dist\MxZip\MxZipViewer.exe)) { throw "MxZipViewer.exe is missing from the build" }
           $smoke = Start-Process .\dist\MxZip\MxZip.exe -ArgumentList "--updated" -Wait -PassThru -WindowStyle Hidden
           if ($smoke.ExitCode) { throw "packaged MxZip.exe smoke failed (exit $($smoke.ExitCode))" }
           $expected = python -c "import version; print(version.__version__)"

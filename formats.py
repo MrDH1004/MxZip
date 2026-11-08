@@ -112,6 +112,9 @@ _OTHER_READ_EXTS = [".tbz", ".tbz2", ".bz2", ".txz", ".tzst", ".zst", ".egg", ".
 READ_EXTS = _PRIMARY_READ_EXTS + [ext for ext in _OTHER_READ_EXTS if ext not in _PRIMARY_READ_EXTS]
 # images and installers: right-clicking them still offers compressing (they are not "just an archive")
 IMAGE_EXTS = list(SEVENZ_IMAGE_EXTS)
+# archives proper in the Explorer menu (extract items only); .exe is a program first: right-clicking it offers
+# compressing only (a self-extracting archive is still opened from MxZip itself)
+SHELL_ARCHIVE_EXTS = [e for e in READ_EXTS if e not in IMAGE_EXTS and e not in SFX_EXTS]
 OPEN_FILTER = "압축 파일 (" + " ".join("*" + e for e in READ_EXTS + [".001", ".r00", ".a00"]) + ");;모든 파일 (*.*)"
 _TYPE_LABELS = {
     ".zip": "ZIP 압축 파일", ".zipx": "ZIPX 압축 파일", ".exe": "EXE 자체 압축 실행 파일",

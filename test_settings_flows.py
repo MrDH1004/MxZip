@@ -252,6 +252,26 @@ class SettingsFlows(unittest.TestCase):
                 self.assertEqual(extract.call_args.args[2], "rename")
                 self.assertEqual(opened.call_count, int(on))
 
+    def test_shell_extract_modes_pick_the_usual_destinations(self):
+        # 여기에 풀기: next to the archive / 알아서 풀기: there only for one top-level item / 폴더에: "<name>\"
+        import formats
+        multi = self.root / "multi.zip"
+        src = self.root / "src"
+        (src / "a").mkdir(parents=True)
+        (src / "a" / "x.txt").write_text("x")
+        (src / "b.txt").write_text("b")
+        formats.create("zip", [str(src / "a"), str(src / "b.txt")], str(multi), level=5)
+        single = self.root / "single.zip"
+        formats.create("zip", [str(src / "a")], str(single), level=5)
+        cases = [(single, "here", self.root), (single, "smart", self.root), (single, "folder", self.root / "single"),
+                 (multi, "here", self.root), (multi, "smart", self.root / "multi"), (multi, "folder", self.root / "multi")]
+        for arc, mode, expected in cases:
+            with self.subTest(arc=arc.name, mode=mode), \
+                    mock.patch.object(self.win, "_do_extract", return_value=True) as extract, \
+                    mock.patch.object(gui, "writable_target", return_value=str(self.root)):
+                gui.quick_extract(self.win, str(arc), mode)
+                self.assertEqual(os.path.normcase(extract.call_args.args[0]), os.path.normcase(str(expected)))
+
     def test_update_history_all_results_both_modes_and_network_log(self):
         for manual in (False, True):
             for release, error in ((None, None), (SimpleNamespace(version="9.0.0"), None), (None, OSError("offline"))):
