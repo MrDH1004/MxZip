@@ -269,9 +269,22 @@ class RenewalTests(unittest.TestCase):
         self.assertEqual(repair.call_args.args[:2], (str(self.arc), str(expected)))
         self.assertIn("2", info.call_args.args[2])
 
-    def test_opening_zip_with_missing_central_directory_offers_repair(self):
+    def test_opening_zip_with_missing_central_directory_opens_its_members(self):
+        # members all there, directory gone (a copy cut short): the directory is rebuilt, no repair needed
         damaged = self.root / "broken.zip"
         damaged.write_bytes(self.arc.read_bytes().split(b"PK\x01\x02", 1)[0])
+
+        with mock.patch.object(gui.QMessageBox, "question") as question, \
+                mock.patch.object(gui.QMessageBox, "critical") as critical:
+            opened = self.win.open_archive(str(damaged))
+
+        self.assertTrue(opened)
+        question.assert_not_called()
+        critical.assert_not_called()
+
+    def test_opening_unreadable_zip_offers_repair(self):
+        damaged = self.root / "broken.zip"
+        damaged.write_bytes(b"PK\x03\x04" + bytes(40))  # a header and nothing usable after it
 
         with mock.patch.object(gui.QMessageBox, "question", return_value=gui.QMessageBox.Yes) as question, \
                 mock.patch.object(self.win, "repair_archive") as repair, \

@@ -47,6 +47,30 @@ class ViewerEngineTests(unittest.TestCase):
         self.assertEqual(row[1:4], [False, 5000, row[3]])
         self.assertRegex(row[4], r"^\d{4}-\d\d-\d\d \d\d:\d\d$")
 
+    def test_zip_cut_short_lists_and_extracts_the_rest(self):
+        import zipfile
+        arc = os.path.join(self.root, "cut.zip")
+        with zipfile.ZipFile(arc, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("ok1.txt", b"one" * 1000)
+            z.writestr("ok2.txt", b"two" * 1000)
+            z.writestr("last.bin", os.urandom(50000))
+        with zipfile.ZipFile(arc) as z:
+            cut = z.getinfo("last.bin").header_offset + 500
+        with open(arc, "r+b") as f:
+            f.truncate(cut)  # a download that stopped inside the last member
+        code, doc = self.run_engine("--list-json", arc, self.result)
+        self.assertEqual(code, 0, doc)
+        self.assertEqual(sorted(r[0] for r in doc["entries"]), ["ok1.txt", "ok2.txt"])
+        self.assertEqual(doc["damaged"], ["last.bin"])
+        self.assertFalse(doc["editable"])  # the directory was rebuilt: read-only
+        dest = os.path.join(self.root, "out")
+        code, doc = self.run_engine("--extract-to", arc, dest, self.result)
+        self.assertEqual(code, 0, doc)
+        self.assertEqual(doc["skipped"], ["last.bin"])
+        with open(os.path.join(dest, "ok2.txt"), "rb") as f:
+            self.assertEqual(f.read(), b"two" * 1000)
+        self.assertFalse(os.path.exists(os.path.join(dest, "last.bin")))
+
     def test_password_comes_on_stdin_and_a_wrong_one_is_reported(self):
         arc = os.path.join(self.root, "p.7z")
         formats.create("7z", [self.src], arc, level=5, password="암호 pw")
@@ -198,6 +222,135 @@ class ViewerEngineTests(unittest.TestCase):
     def test_missing_archive_is_reported(self):
         code, doc = self.run_engine("--list-json", os.path.join(self.root, "없음.zip"), self.result)
         self.assertEqual((code, doc["error"]), (1, "missing"))
+
+    # ----- --create-json: the viewer's 새 압축 window -----
+
+    def names_in(self, arc, password=None):
+        with formats.open_any(arc, password) as z:
+            return {e.name.replace("\\", "/").rstrip("/") for e in z.entries()}
+
+    def test_create_zip(self):
+        out = os.path.join(self.root, "new.zip")
+        code, doc = self.run_engine("--create-json", out, self.result, "--format", "zip", "--level", "6",
+                                    "--", self.src)
+        self.assertEqual((code, doc), (0, {"ok": True, "outputs": [out]}))
+        self.assertTrue({"자료/a.txt", "자료/하위/b.bin"} <= self.names_in(out))
+
+    def test_create_7z_and_store_only(self):
+        out = os.path.join(self.root, "new.7z")
+        code, doc = self.run_engine("--create-json", out, self.result, "--format", "7z", "--level", "0",
+                                    "--", self.src)
+        self.assertEqual(code, 0, doc)
+        self.assertEqual(doc["outputs"], [out])
+        self.assertTrue({"자료/a.txt", "자료/하위/b.bin"} <= self.names_in(out))
+
+    def test_create_split_zip_makes_volumes(self):
+        big = os.path.join(self.root, "big.bin")
+        with open(big, "wb") as f:
+            f.write(os.urandom(300 << 10))
+        out = os.path.join(self.root, "split.zip")
+        code, doc = self.run_engine("--create-json", out, self.result, "--level", "0", "--split", str(64 << 10),
+                                    "--test", "--", big)
+        self.assertEqual(code, 0, doc)
+        self.assertGreaterEqual(len(doc["outputs"]), 4, doc)
+        self.assertTrue(doc["outputs"][0].endswith(".zip.001"), doc)
+        self.assertTrue(all(os.path.getsize(p) <= 64 << 10 for p in doc["outputs"]))
+        code, doc = self.run_engine("--create-json", out, self.result, "--format", "7z", "--split", "65536",
+                                    "--", big)
+        self.assertEqual(doc.get("error"), "message", doc)  # 7z has no split
+        code, doc = self.run_engine("--create-json", out, self.result, "--split", "1000", "--", big)
+        self.assertIn("64KB", doc.get("message", ""), doc)
+
+    def test_create_each_makes_one_archive_per_item(self):
+        one = os.path.join(self.root, "one.txt")
+        with open(one, "wb") as f:
+            f.write(b"1" * 100)
+        dest = os.path.join(self.root, "dest")
+        os.makedirs(dest)
+        open(os.path.join(dest, "one.zip"), "wb").close()  # taken: the new one becomes "one (2).zip"
+        code, doc = self.run_engine("--create-json", os.path.join(dest, "ignored.zip"), self.result, "--each",
+                                    "--", self.src, one)
+        self.assertEqual(code, 0, doc)
+        self.assertEqual(doc["outputs"], [os.path.join(dest, "자료.zip"), os.path.join(dest, "one (2).zip")])
+        self.assertEqual(self.names_in(doc["outputs"][1]), {"one.txt"})
+        self.assertFalse(os.path.exists(os.path.join(dest, "ignored.zip")))
+
+    def test_create_with_test_passes_and_reports_damage(self):
+        out = os.path.join(self.root, "t.zip")
+        code, doc = self.run_engine("--create-json", out, self.result, "--test", "--", self.src)
+        self.assertEqual((code, doc["ok"]), (0, True), doc)
+        import viewer_engine
+        from unittest import mock
+
+        class Broken:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def test(self, **kw):
+                return ["자료/a.txt"]
+        os.remove(out)
+        with mock.patch("formats.open_any", return_value=Broken()), \
+                mock.patch.object(viewer_engine, "_recycle") as recycle:
+            code = viewer_engine.dispatch(["--create-json", out, self.result, "--test", "--delete-source",
+                                           "--", self.src])
+        with open(self.result, encoding="utf-8") as f:
+            doc = json.load(f)
+        self.assertEqual((code, doc["ok"]), (1, False))
+        self.assertIn("자료/a.txt", doc["message"])
+        recycle.assert_not_called()  # a failed test never deletes the originals
+
+    def test_create_password_from_stdin_encrypts(self):
+        out = os.path.join(self.root, "p.zip")
+        code, doc = self.run_engine("--create-json", out, self.result, "--password-stdin", "--", self.src,
+                                    stdin="암호 pw".encode())
+        self.assertEqual(code, 0, doc)
+        code, doc = self.run_engine("--test-json", out, self.result)
+        self.assertEqual(doc.get("error"), "password", doc)
+        code, doc = self.run_engine("--test-json", out, self.result, "--password-stdin", stdin="암호 pw".encode())
+        self.assertEqual(doc, {"ok": True, "bad": []})
+        code, doc = self.run_engine("--create-json", os.path.join(self.root, "p.tar"), self.result,
+                                    "--format", "tar", "--password-stdin", "--", self.src, stdin=b"pw")
+        self.assertEqual(doc.get("error"), "message", doc)  # TAR cannot hold a password
+
+    def test_create_delete_source_recycles_only_after_success(self):
+        import viewer_engine
+        from unittest import mock
+        out = os.path.join(self.root, "d.zip")
+        with mock.patch.object(viewer_engine, "_recycle") as recycle:
+            code = viewer_engine.dispatch(["--create-json", out, self.result, "--delete-source", "--test",
+                                           "--", self.src])
+        self.assertEqual(code, 0)
+        recycle.assert_called_once_with([self.src])
+        missing = os.path.join(self.root, "없음")
+        with mock.patch.object(viewer_engine, "_recycle") as recycle:
+            code = viewer_engine.dispatch(["--create-json", out, self.result, "--delete-source", "--", missing])
+        with open(self.result, encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["error"], "missing")
+        recycle.assert_not_called()
+
+    def test_recycle_moves_the_file_away(self):
+        """The real SHFileOperationW call on a scratch file. It lands in the user's Recycle Bin, so it runs only
+        when asked for: MXZIP_TEST_RECYCLE=1."""
+        import viewer_engine
+        if not os.environ.get("MXZIP_TEST_RECYCLE"):
+            self.skipTest("set MXZIP_TEST_RECYCLE=1 to send a scratch file to the Recycle Bin")
+        victim = os.path.join(self.root, "mxzip-recycle-test.txt")
+        with open(victim, "wb") as f:
+            f.write(b"x")
+        viewer_engine._recycle([victim])
+        self.assertFalse(os.path.exists(victim))
+
+    def test_create_list_file_adds_paths(self):
+        import appcore
+        listing = appcore.write_list([self.src])
+        out = os.path.join(self.root, "l.zip")
+        code, doc = self.run_engine("--create-json", out, self.result, "--list", listing)
+        self.assertEqual(code, 0, doc)
+        self.assertFalse(os.path.exists(listing))
+        self.assertIn("자료/a.txt", self.names_in(out))
 
     def test_no_qt_is_loaded(self):
         arc = os.path.join(self.root, "a.zip")

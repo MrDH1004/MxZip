@@ -38,7 +38,7 @@ def main() -> int:
     if _open_in_viewer(args):
         return 0
     if args and args[0] in ("--list-json", "--extract-to", "--test-json", "--delete-json", "--add-json",
-                            "--update-check"):
+                            "--create-json", "--update-check"):
         # the WinForms viewer's engine calls: no Qt
         import viewer_engine
         code = viewer_engine.dispatch(args)

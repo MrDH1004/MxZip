@@ -7,13 +7,21 @@ password comes on stdin (never on the command line, where other processes could 
   MxZip.exe --test-json    ARCHIVE RESULT.json [--password-stdin]
   MxZip.exe --delete-json  ARCHIVE RESULT.json [--password-stdin] -- MEMBER ...
   MxZip.exe --add-json     ARCHIVE RESULT.json [--password-stdin] [--into FOLDER] -- PATH ...
+  MxZip.exe --create-json  OUT RESULT.json [--password-stdin] [--format ID] [--level N] [--split BYTES]
+                           [--exclude "a,b"] [--test] [--each] [--delete-source] [--list FILE] -- PATH ...
 
 RESULT.json: {"ok": true, ...}  or {"ok": false, "error": "password" | "missing" | "cancel" | "message",
 "message": "..."}. While working, RESULT.json.progress holds "percent<TAB>name" (rewritten at most every
 0.1 s); creating RESULT.json.cancel stops the work.
 
 --list-json: "entries": [[name, is_dir, size, csize, "YYYY-MM-DD HH:MM", encrypted], ...], "format",
-"editable" (adding / deleting works: a plain, unsplit ZIP).  --test-json: "bad": [names that failed]."""
+"editable" (adding / deleting works: a plain, unsplit ZIP), "damaged" (a ZIP cut short: members whose data is
+not all there, left out of "entries").  --extract-to: "skipped": [damaged members left out; the rest is
+extracted].  --test-json: "bad": [names that failed].
+--create-json (the viewer's 새 압축 window): formats.create(); --level 0 stores only; --each makes one archive per
+PATH in OUT's folder, named after the item; --test checks every produced archive afterwards; --delete-source sends
+the PATHs to the Recycle Bin only when everything succeeded; --list FILE: more PATHs, one per line (UTF-8, the
+file is deleted), for selections too long for a command line. "outputs": [the files made]."""
 from __future__ import annotations
 
 import json
@@ -161,7 +169,11 @@ def list_json(args: list[str]) -> int:
         with formats.open_any(archive, _password(options)) as z:
             rows = [[e.name, bool(e.is_dir), int(e.size or 0), int(e.csize or 0), _stamp(e.mtime),
                      bool(e.encrypted)] for e in z.entries()]
-        return {"entries": rows, "format": _format_name(archive), "editable": _editable(archive)}
+            # a cut-short ZIP (directory rebuilt from the local headers): read-only, damaged members listed apart
+            rebuilt = getattr(z, "recovered", None) is not None
+            damaged = list(getattr(z, "damaged", []))
+        return {"entries": rows, "format": _format_name(archive), "editable": _editable(archive) and not rebuilt,
+                "damaged": damaged}
     return _run(result, work)
 
 
@@ -177,6 +189,8 @@ def extract_to(args: list[str]) -> int:
         import formats
         with formats.open_any(archive, _password(options)) as z:
             z.extract(dest, members or None, progress=progress, cancel=cancel, overwrite=overwrite)
+            skipped = list(getattr(z, "skipped", []))  # damaged members left out, the rest extracted
+            return {"skipped": skipped} if skipped else None
     return _run(result, work)
 
 
@@ -219,6 +233,104 @@ def add_json(args: list[str]) -> int:
     return _run(result, work)
 
 
+def _each_target(folder: str, path: str, fmt, used: set) -> str:
+    """OUT's folder + the item's name + the format's extension, never an existing file or one made already."""
+    path = os.path.abspath(path)
+    name = os.path.basename(path.rstrip("\\/"))
+    if not fmt.single and not os.path.isdir(path):
+        name = os.path.splitext(name)[0] or name  # a.txt -> a.zip; a stream keeps it: a.txt.gz
+    base = os.path.join(folder, name)
+    target, i = base + fmt.ext, 2
+    while os.path.lexists(target) or os.path.exists(target + ".001") or os.path.normcase(target) in used:
+        target, i = f"{base} ({i}){fmt.ext}", i + 1
+    used.add(os.path.normcase(target))
+    return target
+
+
+def _recycle(paths: list[str]) -> None:
+    """Sends files and folders to the Recycle Bin (SHFileOperationW, FOF_ALLOWUNDO); never deletes for good
+    without asking: where there is no Recycle Bin, Windows warns first (FOF_WANTNUKEWARNING)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [("hwnd", wintypes.HWND), ("wFunc", wintypes.UINT), ("pFrom", wintypes.LPCWSTR),
+                    ("pTo", wintypes.LPCWSTR), ("fFlags", wintypes.WORD), ("fAnyOperationsAborted", wintypes.BOOL),
+                    ("hNameMappings", wintypes.LPVOID), ("lpszProgressTitle", wintypes.LPCWSTR)]
+
+    FO_DELETE = 0x0003
+    FOF_SILENT, FOF_NOCONFIRMATION, FOF_ALLOWUNDO, FOF_NOERRORUI, FOF_WANTNUKEWARNING = \
+        0x0004, 0x0010, 0x0040, 0x0400, 0x4000
+    op = SHFILEOPSTRUCTW()
+    op.wFunc = FO_DELETE
+    op.pFrom = "".join(os.path.abspath(p) + "\0" for p in paths) + "\0"  # double-null terminated list
+    op.fFlags = FOF_SILENT | FOF_NOCONFIRMATION | FOF_ALLOWUNDO | FOF_NOERRORUI | FOF_WANTNUKEWARNING
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    shell32.SHFileOperationW.argtypes = [ctypes.POINTER(SHFILEOPSTRUCTW)]
+    shell32.SHFileOperationW.restype = ctypes.c_int
+    code = shell32.SHFileOperationW(ctypes.byref(op))
+    if code != 0 or op.fAnyOperationsAborted:
+        raise UserError("압축은 끝났지만 원본을 휴지통으로 옮기지 못했습니다. 원본은 그대로 있습니다."
+                        f" 직접 지우세요. (코드 {code:#x})")
+
+
+def create_json(args: list[str]) -> int:
+    out, result = args[1], args[2]
+    options, paths = _split(args[3:])
+    progress, cancel = _progress(result)
+
+    def work():
+        import appcore
+        import formats
+        items = list(paths)
+        if "--list" in options[:-1]:
+            items += appcore.read_list(_option(options, "--list"))
+        if not items:
+            raise UserError("압축할 파일이 없습니다. 파일이나 폴더를 추가하세요.")
+        for p in items:
+            if not os.path.exists(p):
+                raise FileNotFoundError(2, "not found", p)
+        fmt_id = _option(options, "--format", "zip")
+        if fmt_id not in formats.BY_ID:
+            raise UserError(f"이 압축 형식은 만들 수 없습니다: {fmt_id}")
+        fmt = formats.BY_ID[fmt_id]
+        level = max(0, min(9, int(_option(options, "--level", "6"))))
+        split = int(_option(options, "--split", "0"))
+        if split and not fmt.split:
+            raise UserError(f"{fmt.label} 형식은 분할 압축을 지원하지 않습니다.")
+        if 0 < split < 64 << 10:
+            raise UserError("분할 크기는 64KB 이상이어야 합니다.")
+        exclude = [e.strip() for e in _option(options, "--exclude").split(",") if e.strip()]
+        password = _password(options)
+        out_path = os.path.abspath(out)
+        folder = os.path.dirname(out_path)
+        if "--each" in options:
+            used: set = set()
+            jobs = [([p], _each_target(folder, p, fmt, used)) for p in items]
+        else:
+            jobs = [(items, out_path)]
+        outputs: list[str] = []
+        for group, target in jobs:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            outputs += formats.create(fmt_id, group, target, level=max(1, level), password=password,
+                                      store_only=level == 0, split_size=split, exclude=exclude,
+                                      progress=progress, cancel=cancel)
+        if "--test" in options:
+            firsts = [t for _, t in jobs]
+            firsts = [t + ".001" if not os.path.exists(t) and os.path.exists(t + ".001") else t for t in firsts]
+            for arc in firsts:
+                with formats.open_any(arc, password) as z:
+                    bad = list(z.test(progress=progress, cancel=cancel) or [])
+                if bad:
+                    raise UserError(f"압축 후 테스트에서 손상된 항목이 있습니다: {os.path.basename(arc)}\n"
+                                    + "\n".join(bad[:20]) + ("\n..." if len(bad) > 20 else "")
+                                    + "\n\n원본은 지우지 않았습니다.")
+        if "--delete-source" in options:
+            _recycle(items)
+        return {"outputs": outputs}
+    return _run(result, work)
+
+
 def update_check(args: list[str]) -> int:
     """--update-check RESULT: the automatic update check MxZip's Qt window ran at every start (when enabled in
     the settings, installed exe only). "due": whether a check ran; "version": a newer release, else ""."""
@@ -244,7 +356,8 @@ def update_check(args: list[str]) -> int:
 
 
 COMMANDS = {"--list-json": (list_json, 3), "--extract-to": (extract_to, 4), "--test-json": (test_json, 3),
-            "--delete-json": (delete_json, 3), "--add-json": (add_json, 3), "--update-check": (update_check, 2)}
+            "--delete-json": (delete_json, 3), "--add-json": (add_json, 3), "--create-json": (create_json, 3),
+            "--update-check": (update_check, 2)}
 
 
 def dispatch(args: list[str]) -> int | None:

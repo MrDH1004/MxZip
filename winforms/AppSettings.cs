@@ -10,6 +10,12 @@ sealed class AppSettings
     public string FontFamily { get; private init; } = "";
     public float FontSize { get; private init; } = 9f;
     public bool ExtractOpenFolder { get; private init; }
+    // the 새 압축 window's defaults (환경설정 > 압축)
+    public string CompressFormat { get; private init; } = "zip";
+    public int CompressLevel { get; private init; } = 6;
+    public string CompressDir { get; private init; } = "";
+    public string CompressSplit { get; private init; } = "";
+    public bool CompressOpenFolder { get; private init; }
 
     public static AppSettings Load()
     {
@@ -28,6 +34,12 @@ sealed class AppSettings
                 FontFamily = S("font_family", ""),
                 FontSize = Math.Clamp(size * 0.9f, 8f, 16f),  // Qt points at 96 dpi read slightly larger
                 ExtractOpenFolder = B("extract_open_folder"),
+                CompressFormat = S("compress_format", "zip"),
+                CompressLevel = r.TryGetProperty("compress_level", out var cl) && cl.TryGetInt32(out int lv)
+                    ? Math.Clamp(lv, 0, 9) : 6,
+                CompressDir = S("compress_dir", ""),
+                CompressSplit = S("compress_split", ""),
+                CompressOpenFolder = B("compress_open_folder"),
             };
         }
         catch

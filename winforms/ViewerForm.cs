@@ -7,7 +7,7 @@ namespace MxZip.Viewer;
 /// <summary>
 /// MxZip's archive window: a toolbar of the common actions, a folder-by-folder list of what the engine reported,
 /// and an empty "drop files here" page when no archive is open. Every format operation is an engine call
-/// (progress and cancel in the status bar); compressing new archives and settings open MxZip's own windows.
+/// (progress and cancel in the status bar); new archives are set up in the 새 압축 window, settings open MxZip's own.
 /// </summary>
 sealed class ViewerForm : Form
 {
@@ -18,6 +18,7 @@ sealed class ViewerForm : Form
     string? archive;
     string? password;
     List<Entry> entries = new();
+    List<string> damaged = new();  // a ZIP cut short: members left out of the list (shown in the status line)
     bool editable;
     string format = "";
     readonly Dictionary<string, List<Entry>> folders = new(StringComparer.OrdinalIgnoreCase);  // "a/b/" -> children
@@ -421,6 +422,7 @@ sealed class ViewerForm : Form
         archive = null;
         password = null;
         entries = new();
+        damaged = new();
         Text = "MxZip";
         list.Visible = false;
         pathBar.Visible = false;
@@ -484,11 +486,15 @@ sealed class ViewerForm : Form
             return;
         }
         entries = r.Entries;
+        damaged = r.Bad;
         editable = r.Editable;
         format = r.Format;
         BuildFolders();
         string keep = folders.ContainsKey(current) ? current : "";
         ShowFolder(keep);
+        if (r.Bad.Count > 0)  // a ZIP cut short: named once on opening, counted in the summary afterwards
+            statusText.Text = $"손상된 파일 {r.Bad.Count:N0}개는 목록에서 뺐습니다 ({string.Join(", ", r.Bad.Take(3))}" +
+                              (r.Bad.Count > 3 ? " 외" : "") + "). 나머지는 풀 수 있습니다.";
     }
 
     void Reload() => _ = LoadArchive(archive!, Engine.List(archive!, password));
@@ -597,10 +603,11 @@ sealed class ViewerForm : Form
     {
         long files = entries.Count(e => !e.IsDir), total = entries.Where(e => !e.IsDir).Sum(e => e.Size);
         statusText.Text = $"{format} · 파일 {files:N0}개 · {FormatSize(total)}" + (password != null ? " · 암호 사용" : "") +
-                          (editable ? "" : " · 읽기 전용(파일 추가·삭제는 ZIP만)");
+                          (damaged.Count > 0 ? $" · 손상된 파일 {damaged.Count:N0}개 제외(끝부분이 잘린 ZIP, 읽기 전용)" :
+                           editable ? "" : " · 읽기 전용(파일 추가·삭제는 ZIP만)");
     }
 
-    static string FormatSize(long n) => n < 1024 ? $"{n:N0} B" :
+    internal static string FormatSize(long n) => n < 1024 ? $"{n:N0} B" :
         n < 1024 * 1024 ? $"{n / 1024.0:N1} KB" :
         n < 1024L * 1024 * 1024 ? $"{n / (1024.0 * 1024):N1} MB" : $"{n / (1024.0 * 1024 * 1024):N2} GB";
 
@@ -655,7 +662,9 @@ sealed class ViewerForm : Form
 
     // ----- engine jobs: one at a time, progress and 취소 in the status bar -----
 
-    async Task<EngineResult?> RunJob(string what, Func<string?, IProgress<(int, string)>, EngineJob> start)
+    /// <summary>askPassword: a "password" answer asks for the open archive's password and runs the job again.</summary>
+    async Task<EngineResult?> RunJob(string what, Func<string?, IProgress<(int, string)>, EngineJob> start,
+                                     bool askPassword = true)
     {
         bool asked = false;
         while (true)
@@ -683,7 +692,7 @@ sealed class ViewerForm : Form
                 progress.Visible = cancelLink.Visible = false;
                 UpdateButtons();
             }
-            if (r.Ok || r.Error != "password")
+            if (r.Ok || r.Error != "password" || !askPassword)
             {
                 if (r.Error == "cancel")
                     statusText.Text = "취소했습니다.";
@@ -826,9 +835,20 @@ sealed class ViewerForm : Form
             return;
         }
         statusText.Text = $"풀었습니다: {dest}";
+        if (r.Bad.Count > 0)
+        {
+            statusText.Text = $"풀었습니다 (손상된 파일 {r.Bad.Count:N0}개 건너뜀): {dest}";
+            Warn(SkippedText(r.Bad));
+        }
         if (settings.ExtractOpenFolder || members.Count > 0)
             Process.Start(new ProcessStartInfo(dest) { UseShellExecute = true })?.Dispose();
     }
+
+    /// <summary>After extracting a ZIP cut short: which members were left out, and what to do about it.</summary>
+    static string SkippedText(List<string> names) =>
+        $"나머지 파일은 풀었지만, 손상된 파일 {names.Count:N0}개는 건너뛰었습니다.\n\n" +
+        string.Join("\n", names.Take(20)) + (names.Count > 20 ? $"\n외 {names.Count - 20:N0}개" : "") +
+        "\n\n압축 파일이 끝까지 받아지지 않았거나 복사가 중간에 끊긴 것 같습니다. 원본을 다시 받으면 모두 풀 수 있습니다.";
 
     string? ChooseFolder(string title, string start)
     {
@@ -951,16 +971,46 @@ sealed class ViewerForm : Form
         _ = LoadArchive(Path.GetFullPath(path), Engine.List(Path.GetFullPath(path), null));
     }
 
-    void NewArchiveDialog()
+    /// <summary>새로 압축: the 새 압축 window, empty; files are added there.</summary>
+    void NewArchiveDialog() => Compress(Array.Empty<string>());
+
+    /// <summary>
+    /// The 새 압축 window (list, format, password, split, method) with these files and folders in its list; the job
+    /// runs here with progress and 취소 in the status bar. (MxZip.exe --compress-dialog-list stays for the shell menu.)
+    /// </summary>
+    void Compress(IEnumerable<string> paths)
     {
-        using var dlg = new OpenFileDialog { Title = "압축할 파일", Multiselect = true };
-        if (dlg.ShowDialog(this) == DialogResult.OK)
-            Compress(dlg.FileNames);
+        if (running != null)
+            return;
+        var request = CompressDialog.Ask(this, theme, paths);
+        if (request != null)
+            _ = CreateArchive(request);
     }
 
-    /// <summary>MxZip's compress window (format, level, password, split) for these files and folders.</summary>
-    static void Compress(IEnumerable<string> paths) =>
-        Engine.Forward("--compress-dialog-list", Engine.ListFile(paths));
+    async Task CreateArchive(CompressRequest request)
+    {
+        string name = request.Each ? $"{request.Paths.Count:N0}개 압축 파일" : Path.GetFileName(request.Out);
+        var r = await RunJob($"압축하는 중... {name}", (_, p) => Engine.Create(request, p), askPassword: false);
+        if (r == null || r.Error == "cancel")
+            return;
+        if (!r.Ok)
+        {
+            Warn(r.Message);
+            return;
+        }
+        statusText.Text = "압축했습니다: " + string.Join(", ", r.Outputs.Take(3).Select(Path.GetFileName)) +
+                          (r.Outputs.Count > 3 ? $" 외 {r.Outputs.Count - 3}개" : "");
+        string? folder = Path.GetDirectoryName(r.Outputs.FirstOrDefault() ?? request.Out);
+        if (settings.CompressOpenFolder && folder != null)
+            Process.Start(new ProcessStartInfo(folder) { UseShellExecute = true })?.Dispose();
+        if (r.Outputs.Count == 0)
+            return;
+        if (!request.Each || r.Outputs.Count == 1)
+            OpenArchive(r.Outputs[0]);  // a split ZIP opens from its first volume (.zip.001)
+        else
+            Info($"압축 파일 {r.Outputs.Count:N0}개를 만들었습니다.\n\n" + string.Join("\n", r.Outputs.Take(20)) +
+                 (r.Outputs.Count > 20 ? $"\n외 {r.Outputs.Count - 20}개" : ""));
+    }
 
     static readonly HashSet<string> ArchiveExts = new(StringComparer.OrdinalIgnoreCase)
     {

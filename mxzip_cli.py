@@ -152,8 +152,14 @@ def main(argv=None) -> int:
             with formats.open_any(a.archive, a.password) as z:
                 if cmd == "x":
                     z.extract(a.out, a.files or None, progress=_bar, overwrite={"all": True, "skip": False, "rename": "rename"}[a.ow])
+                    skipped = list(getattr(z, "skipped", []))
                 else:
-                    _extract_flat(z, a.out, a.files or None, a.ow)
+                    skipped = _extract_flat(z, a.out, a.files or None, a.ow)
+            if skipped:  # a ZIP cut short: the rest is extracted, these are not
+                print(f"\nskipped {len(skipped)} damaged member(s):", file=sys.stderr)
+                for name in skipped:
+                    print(f"  {name}", file=sys.stderr)
+                return 1
             print("\ndone")
         elif cmd == "t":
             with formats.open_any(a.archive, a.password) as z:
@@ -203,15 +209,19 @@ def _add_existing(a) -> int:
 
 def _extract_flat(z, out, names, ow="all"):
     """e: every file straight into out (no folders). Each one is extracted into a private temp folder first and
-    moved from where the extractor actually wrote it, so a hostile name cannot point the move elsewhere."""
+    moved from where the extractor actually wrote it, so a hostile name cannot point the move elsewhere.
+    Returns the members left out: those of a ZIP cut short (all of them unless names were chosen) and any whose
+    check failed."""
     out = os.path.realpath(out)
     os.makedirs(out, exist_ok=True)
+    failed = [] if names else list(getattr(z, "damaged", []))
     for e in z.entries():
         if e.is_dir or (names and e.name not in names):
             continue
         tmp = os.path.realpath(tempfile.mkdtemp())
         try:
             z.extract(tmp, [e.name])
+            failed.extend(getattr(z, "skipped", []))
             src = ziplib.safe_target(tmp, e.name)
             if src is None or not os.path.isfile(src):
                 continue
@@ -228,6 +238,7 @@ def _extract_flat(z, out, names, ow="all"):
             shutil.move(src, dst)  # temp folder may be on another drive
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+    return failed
 
 
 if __name__ == "__main__":

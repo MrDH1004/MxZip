@@ -276,6 +276,12 @@ def split_file(path: str, volume_size: int) -> list[str]:
 # ---------- reading ----------
 
 
+def _decompress_errors() -> tuple:
+    """Errors of the other decoders zipfile uses (LZMA), when loaded: a damaged member, not a disk problem."""
+    lzma = sys.modules.get("lzma")
+    return (lzma.LZMAError,) if lzma is not None else ()
+
+
 class Archive:
     def __init__(self, path: str, password: Optional[str] = None):
         self.path = path
@@ -284,31 +290,56 @@ class Archive:
         if is_split_first(path):
             real = self._tmp = join_split(path)
         self._real = real
+        # recovered: the central directory could not be read (a file cut short), so zipscan rebuilt it from the
+        # local headers. damaged: members it had to leave out (not listed). skipped: what the last extract() left
+        # out, the damaged members (for a whole-archive extract) plus members that failed their check
+        self.recovered = None
+        self.damaged: list[str] = []
+        self.skipped: list[str] = []
+        self._opened = []  # file objects over file + rebuilt directory, closed with the archive
         try:
             # Listing plain ZIPs must not load Cryptodome/cffi on every CLI run.
             # The standard reader also handles non-deflate methods without AES.
-            self.zf = zipfile.ZipFile(real)
+            try:
+                self.zf = zipfile.ZipFile(real)
+            except zipfile.BadZipFile:
+                import zipscan
+                self.recovered = zipscan.recover(real)  # BadZipFile again when nothing in it is usable
+                self.damaged = list(self.recovered.damaged)
+                self.zf = zipfile.ZipFile(self._source())
             self._reader = zipfile.ZipFile
             self._bad_zip = zipfile.BadZipFile
             if any(info.flag_bits & 1 for info in self.zf.infolist()):
                 self.zf.close()
                 global pyzipper
                 import pyzipper
-                self.zf = pyzipper.AESZipFile(real)
+                self.zf = pyzipper.AESZipFile(self._source())
                 self._reader = pyzipper.AESZipFile
                 self._bad_zip = pyzipper.BadZipFile
         except BaseException:
             reader = getattr(self, "zf", None)
             if reader is not None:
                 reader.close()
+            for f in self._opened:
+                f.close()
             if self._tmp:
                 os.remove(self._tmp)
             raise
         self._names = {fix_name(i): i for i in self.zf.infolist()}
         self.set_password(password)
 
+    def _source(self):
+        """What a reader opens: the path, or for a rebuilt directory a new file object over file + directory."""
+        if self.recovered is None:
+            return self._real
+        f = self.recovered.open()
+        self._opened.append(f)
+        return f
+
     def close(self):
         self.zf.close()
+        for f in self._opened:
+            f.close()
         if self._tmp and os.path.exists(self._tmp):
             os.remove(self._tmp)
 
@@ -362,7 +393,7 @@ class Archive:
         if os.environ.get("MXZIP_NATIVE_ZIP_EXTRACT") != "1":
             return None
         from archive_accel import CAP_ZIP_EXTRACT
-        if self._tmp is not None:
+        if self._tmp is not None or self.recovered is not None:
             return None
         infos = self.zf.infolist()
         if not infos or any(info.flag_bits & 1 for info in infos):
@@ -497,6 +528,7 @@ class Archive:
                 overwrite=True):
         """overwrite: True replaces, False skips existing files, "rename" writes "name (2).ext" next to them."""
         wanted = None if names is None else set(names)
+        self.skipped = list(self.damaged) if wanted is None else []  # chosen members: only their own failures
         sel = [n for n in self._names if wanted is None or n in wanted]
         total = sum(self._names[n].file_size for n in sel)
         root = os.path.realpath(dest)
@@ -563,7 +595,7 @@ class Archive:
         def handle():  # one zip handle per worker thread; handles are not thread-safe
             z = getattr(local, "z", None)
             if z is None:
-                z = local.z = self._reader(self._real)
+                z = local.z = self._reader(self._source())
                 z.setpassword(pwd)
                 with lock:
                     handles.append(z)
@@ -689,6 +721,12 @@ class Archive:
             except BaseException as e:
                 if os.path.exists(written):
                     os.remove(written)
+                if self.recovered is not None and not info.flag_bits & 1 and isinstance(
+                        e, (zipfile.BadZipFile, self._bad_zip, zlib.error, EOFError, NotImplementedError)
+                        + _decompress_errors()):
+                    with lock:  # a damaged member of a cut-short file: skip it and keep extracting the rest
+                        self.skipped.append(n)
+                    return
                 if isinstance(e, (RuntimeError, zipfile.BadZipFile, self._bad_zip)) and info.flag_bits & 1 \
                         and ("password" in str(e).lower() or "Bad" in str(e)):
                     raise BadPassword(str(e))  # only an encrypted member can fail because of the password
@@ -722,7 +760,7 @@ class Archive:
     def test(self, progress: Optional[Progress] = None,
              cancel: Optional[Callable[[], bool]] = None) -> list[str]:
         """Return names of broken entries (empty list = archive is OK)."""
-        bad = []
+        bad = list(self.damaged)
         total = sum(i.file_size for i in self._names.values())
         done = 0
         for n, info in self._names.items():

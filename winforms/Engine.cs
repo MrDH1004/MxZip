@@ -15,6 +15,7 @@ sealed record EngineResult(bool Ok, string Error, string Message)
     public bool Editable { get; init; }
     public List<string> Bad { get; init; } = new();
     public string UpdateVersion { get; init; } = "";  // --update-check: a newer release, else ""
+    public List<string> Outputs { get; init; } = new();  // --create-json: the files made
 }
 
 /// <summary>A running engine call: its answer, a way to stop it, and its progress (percent, current name).</summary>
@@ -123,6 +124,32 @@ static class Engine
     public static Task<EngineResult> List(string archive, string? password) =>
         Run(new[] { "--list-json", archive }, Array.Empty<string>(), null, password).Result;
 
+    /// <summary>
+    /// --create-json: the 새 압축 window's job. A long selection goes in a list file (--list): a command line holds
+    /// about 32 000 characters.
+    /// </summary>
+    public static EngineJob Create(CompressRequest job, IProgress<(int percent, string name)>? progress)
+    {
+        var options = new List<string> { "--format", job.Format, "--level", job.Level.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+        if (job.SplitBytes > 0)
+            options.AddRange(new[] { "--split", job.SplitBytes.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+        if (job.Exclude.Length > 0)
+            options.AddRange(new[] { "--exclude", job.Exclude });
+        if (job.Test)
+            options.Add("--test");
+        if (job.Each)
+            options.Add("--each");
+        if (job.DeleteSource)
+            options.Add("--delete-source");
+        IEnumerable<string>? operands = job.Paths;
+        if (job.Paths.Sum(p => p.Length + 3) > 8000)
+        {
+            options.AddRange(new[] { "--list", ListFile(job.Paths) });
+            operands = null;
+        }
+        return Run(new[] { "--create-json", job.Out }, options, operands, job.Password, progress);
+    }
+
     static EngineResult Read(string path)
     {
         try
@@ -138,11 +165,19 @@ static class Engine
                     entries.Add(new Entry(r[0].GetString() ?? "", r[1].GetBoolean(), r[2].GetInt64(), r[3].GetInt64(),
                                           r[4].GetString() ?? "", r[5].GetBoolean()));
             var bad = new List<string>();
-            if (root.TryGetProperty("bad", out var b))
-                foreach (var x in b.EnumerateArray())
-                    bad.Add(x.GetString() ?? "");
+            // "bad" (--test-json), "damaged" (--list-json) and "skipped" (--extract-to) all name members that
+            // could not be read: a damaged member, or one of a ZIP cut short
+            foreach (string key in new[] { "bad", "damaged", "skipped" })
+                if (root.TryGetProperty(key, out var b))
+                    foreach (var x in b.EnumerateArray())
+                        bad.Add(x.GetString() ?? "");
+            var outputs = new List<string>();
+            if (root.TryGetProperty("outputs", out var o))
+                foreach (var x in o.EnumerateArray())
+                    outputs.Add(x.GetString() ?? "");
             return new EngineResult(true, "", "")
             {
+                Outputs = outputs,
                 Entries = entries,
                 Format = root.TryGetProperty("format", out var f) ? f.GetString() ?? "" : "",
                 Editable = root.TryGetProperty("editable", out var ed) && ed.GetBoolean(),

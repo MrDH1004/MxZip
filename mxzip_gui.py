@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import time
+import zipfile
 from datetime import datetime
 
 import json
@@ -242,6 +243,13 @@ class ProgressWindow(QDialog):
 
 
 MIN_SHOWN = 0.6  # seconds a finished progress window stays visible
+
+
+def skipped_text(names: list[str]) -> str:
+    """After extracting a cut-short ZIP: which members were damaged and left out, and what to do."""
+    shown = "\n".join(names[:20]) + (f"\n외 {len(names) - 20}개" if len(names) > 20 else "")
+    return (f"나머지 파일은 풀었지만, 손상된 파일 {len(names)}개는 건너뛰었습니다.\n\n{shown}\n\n"
+            "압축 파일이 끝까지 받아지지 않았거나 복사가 중간에 끊긴 것 같습니다. 원본을 다시 받으면 모두 풀 수 있습니다.")
 
 
 def run_job(parent, title, fn, reveal=None, done_text="작업을 완료했습니다.", job=None):
@@ -1547,6 +1555,10 @@ class Main(QMainWindow):
         if not formats.is_zip(self.arc_path):
             QMessageBox.information(self, APP, "파일 추가·삭제는 ZIP 형식에서만 됩니다. 다른 형식은 풀어서 새로 압축해 주세요.")
             return False
+        if not zipfile.is_zipfile(self.arc_path):  # opened by rebuilding its directory (zipscan): read-only
+            QMessageBox.information(self, APP, "끝부분이 잘린 ZIP 파일이라 파일을 추가하거나 삭제할 수 없습니다. "
+                                               "풀어서 새로 압축해 주세요.")
+            return False
         return True
 
     def add_files(self):
@@ -1683,8 +1695,11 @@ class Main(QMainWindow):
                 with formats.open_any(arc, pw) as z:
                     z.extract(dest, names, progress=prog, cancel=canc,
                               overwrite="rename" if chosen == "rename" else chosen != "skip")
+                    return list(getattr(z, "skipped", []))  # a cut-short ZIP: the damaged members left out
             ok, r = run_job(self, "압축 푸는 중...", job, reveal=dest, done_text="압축 풀기를 완료했습니다.")
             if ok:
+                if r:
+                    QMessageBox.warning(self, APP, skipped_text(r))
                 return True
             if r and r[0] == "password":
                 pw2 = ask_password(self, arc, retry=True)
