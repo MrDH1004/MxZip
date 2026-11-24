@@ -192,8 +192,8 @@ class ProgressWindow(QDialog):
         total = fmt_time(el * t / d) if d and t and el >= 1 and d * 100 >= t else "--:--"
         sep = "&nbsp;&nbsp;·&nbsp;&nbsp;"
         self.label.setText(
-            f"<div style='font-size:10.5pt; font-weight:600; color:#202D35'>{escape(name)}</div>"
-            f"<div style='font-size:9pt; color:#64737D; margin-top:3px'>{pct}%{sep}{fmt_size(int(d / el))}/s{sep}"
+            f"<div style='font-size:10.5pt; font-weight:600; color:#171717'>{escape(name)}</div>"
+            f"<div style='font-size:9pt; color:#5f5f66; margin-top:3px'>{pct}%{sep}{fmt_size(int(d / el))}/s{sep}"
             f"{fmt_time(el)} / {total}</div>")
 
     def show_done(self):
@@ -204,8 +204,8 @@ class ProgressWindow(QDialog):
         self.bar.setValue(100)
         self.setWindowTitle(f"100% {self.title} - {APP}")
         self.label.setText(
-            f"<div style='font-size:10.5pt; font-weight:600; color:#202D35'>{escape(self.done_text)}</div>"
-            f"<div style='font-size:9pt; color:#64737D; margin-top:3px'>{fmt_size(t)}&nbsp;&nbsp;·&nbsp;&nbsp;"
+            f"<div style='font-size:10.5pt; font-weight:600; color:#171717'>{escape(self.done_text)}</div>"
+            f"<div style='font-size:9pt; color:#5f5f66; margin-top:3px'>{fmt_size(t)}&nbsp;&nbsp;·&nbsp;&nbsp;"
             f"걸린 시간 {fmt_time(el)}</div>")
         self.progress_hint.setText("작업을 마쳤습니다. 폴더를 열거나 창을 닫으세요." if self.reveal
                                    else "작업을 완료했습니다.")
@@ -593,7 +593,7 @@ _FMT_COLOR = {"ZIP": "#2f6fed", "7Z": "#1a7f37", "TAR": "#8250df", "TAR.GZ": "#8
               "TAR.XZ": "#8250df", "TAR.ZST": "#8250df"}
 
 
-def glyph_icon(ch: str, color: str = "#64737D", px: int = 16):
+def glyph_icon(ch: str, color: str = "#5f5f66", px: int = 16):
     """Icon drawn from the system icon font, crisp at any DPI and free of image assets."""
     from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
     scale = 2
@@ -628,7 +628,7 @@ class AssocDialog(QDialog):
         lay.setContentsMargins(20, 16, 20, 14)
         lay.setSpacing(10)
         head = QLabel("더블클릭하면 MxZip으로 열 압축 파일 형식을 고르세요.")
-        head.setStyleSheet("font-size: 10.5pt; font-weight: 600; color: #1f2328;")
+        head.setStyleSheet("font-size: 10.5pt; font-weight: 600; color: #171717;")
         lay.addWidget(head)
         self.list = QTreeWidget()
         self.list.setHeaderLabels(["형식", "지금 여는 프로그램"])
@@ -638,7 +638,7 @@ class AssocDialog(QDialog):
         lay.addWidget(self.list)
         self.note = QLabel()
         self.note.setWordWrap(True)
-        self.note.setStyleSheet("color: #6e7781; font-size: 9pt;")
+        self.note.setStyleSheet("color: #5f5f66; font-size: 9pt;")
         lay.addWidget(self.note)
         row = QHBoxLayout()
         b_all = QPushButton("모두 선택")
@@ -1283,7 +1283,7 @@ class Main(QMainWindow):
         label = (entries[0].method if entries and entries[0].method in _FMT_COLOR else
                  "ZIP" if formats.is_zip(path) else os.path.splitext(path)[1].lstrip(".").upper() or "?")
         self.badge.setText(label.split(".")[-1] if len(label) > 4 else label)
-        self.badge.setStyleSheet("background: #16776A;")
+        self.badge.setStyleSheet("background: #2f5bd3;")
         self.arch_name.setText(os.path.basename(path))
         ratio = f" ({packed * 100 // tot}%)" if tot else ""
         self.arch_meta.setText(f"{label}  ·  파일 {files:,}개  ·  {fmt_size(tot)} → {fmt_size(packed)}{ratio}")

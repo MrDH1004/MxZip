@@ -9,10 +9,10 @@ import sys
 import threading
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+    QAbstractSpinBox, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
@@ -49,19 +49,10 @@ class PreferencesDialog(QDialog):
         self._update_timer = QTimer(self)
         self._update_timer.setInterval(80)
         self._update_timer.timeout.connect(self._poll_update)
+        # The window caption already says 환경설정; the body starts with navigation.
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 18)
+        layout.setContentsMargins(16, 16, 20, 16)
         layout.setSpacing(16)
-        self.title = QLabel("환경설정")
-        self.title.setObjectName("settingsTitle")
-        self.subtitle = QLabel("MxZip의 작업 방식과 사용 환경을 설정하세요.")
-        self.subtitle.setObjectName("settingsSubtitle")
-        self.subtitle.setWordWrap(True)
-        header = QVBoxLayout()
-        header.setSpacing(4)
-        header.addWidget(self.title)
-        header.addWidget(self.subtitle)
-        layout.addLayout(header)
 
         body = QWidget()
         body.setObjectName("settingsBody")
@@ -71,9 +62,11 @@ class PreferencesDialog(QDialog):
         self.nav = QListWidget()
         self.nav.setObjectName("settingsNav")
         self.nav.setAccessibleName("설정 섹션")
-        self.nav.setMinimumWidth(156)
-        self.nav.setMaximumWidth(180)
-        self.nav.setSpacing(3)
+        self.nav.setFixedWidth(180)
+        self.nav.setSpacing(1)
+        self.nav.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.nav.setFrameShape(QFrame.Shape.NoFrame)
         body_layout.addWidget(self.nav)
         self.tabs = QTabWidget()
         self.tabs.setObjectName("settingsPages")
@@ -91,16 +84,17 @@ class PreferencesDialog(QDialog):
         self.nav.currentRowChanged.connect(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(self.nav.setCurrentRow)
         self.nav.setCurrentRow(0)
-        layout.addWidget(self._separator())
         footer = QHBoxLayout()
+        footer.setContentsMargins(12, 0, 0, 0)  # hint starts on the nav labels' edge
         footer.setSpacing(16)
-        note = QLabel("변경한 설정은 저장을 누르면 적용됩니다.")
+        note = QLabel("변경한 설정은 저장을 누르면 적용됩니다")
         note.setObjectName("settingsFooterHint")
         note.setWordWrap(True)
         footer.addWidget(note, 1)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
                                        QDialogButtonBox.StandardButton.Cancel)
         self.buttons.setObjectName("settingsButtons")
+        self.buttons.layout().setSpacing(8)
         save = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
         save.setText("저장")
         save.setObjectName("primaryButton")
@@ -118,13 +112,6 @@ class PreferencesDialog(QDialog):
         self._load_associations()
         self._show_update_history(appcore.load_settings())
 
-    @staticmethod
-    def _separator():
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setObjectName("settingsDivider")
-        return line
-
     def _tab(self, title, hint):
         # Keep a regular page at tabs.widget(index): callers search its children.
         page = QWidget()
@@ -137,23 +124,40 @@ class PreferencesDialog(QDialog):
         content = QWidget()
         content.setObjectName("settingsPage")
         form = QFormLayout(content)
-        form.setContentsMargins(4, 4, 16, 20)
+        form.setContentsMargins(24, 20, 24, 24)
         form.setHorizontalSpacing(24)
-        form.setVerticalSpacing(16)
+        form.setVerticalSpacing(12)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        header = QVBoxLayout()
+        header.setSpacing(4)
+        header.setContentsMargins(0, 0, 0, 4)  # + row spacing = 16 px before the first field
         heading = QLabel(title)
         heading.setObjectName("settingsSectionTitle")
-        form.addRow(heading)
-        self._hint(form, hint)
-        form.addRow(self._separator())
+        header.addWidget(heading)
+        note = QLabel(hint)
+        note.setObjectName("settingsSectionHint")
+        note.setWordWrap(True)
+        header.addWidget(note)
+        form.addRow(header)
         scroll.setWidget(content)
         layout.addWidget(scroll)
+        self._add_page(page, title)
+        return form
+
+    def _add_page(self, page, title):
         self.tabs.addTab(page, title)
         self.nav.addItem(title)
-        return form
+        self.nav.item(self.nav.count() - 1).setSizeHint(QSize(0, 36))
+
+    @staticmethod
+    def _gap(form):
+        # Row spacing on both sides of a 1 px spacer: about 24 px between groups.
+        spacer = QWidget()
+        spacer.setFixedHeight(1)
+        form.addRow(spacer)
 
     def _control(self, key, widget):
         self.controls[key] = widget
@@ -177,12 +181,15 @@ class PreferencesDialog(QDialog):
     def _spin(self, form, key, label, minimum, maximum):
         widget = self._control(key, QSpinBox())
         widget.setRange(minimum, maximum)
+        # Flat field like the other inputs; wheel and arrow keys still step the value.
+        widget.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         widget.setAccessibleName(label)
         form.addRow(label, widget)
         return widget
 
     def _path(self, form, key, label):
         row = QHBoxLayout()
+        row.setSpacing(8)
         edit = self._control(key, QLineEdit())
         edit.setAccessibleName(label)
         edit.setPlaceholderText("비워 두면 기본 위치 사용")
@@ -198,20 +205,27 @@ class PreferencesDialog(QDialog):
         if path:
             edit.setText(path)
 
-    def _hint(self, form, text):
+    def _hint(self, form, text, field=False):
+        # Field help sits under the field column, on the inputs' left edge; other help spans the row.
         label = QLabel(text)
-        label.setObjectName("settingsSectionHint")
+        label.setObjectName("settingsFieldHint")
         label.setWordWrap(True)
-        form.addRow(label)
+        if field:
+            form.addRow("", label)
+        else:
+            form.addRow(label)
 
     def _button(self, form, text, callback):
         button = QPushButton(text)
         button.clicked.connect(callback)
-        form.addRow(button)
+        row = QHBoxLayout()
+        row.addWidget(button)
+        row.addStretch(1)
+        form.addRow(row)
         return button
 
     def _general_tab(self):
-        form = self._tab("일반", "언어와 화면 표시를 원하는 방식으로 맞추세요.")
+        form = self._tab("일반", "언어와 화면 표시를 원하는 방식으로 맞추세요")
         self._combo(form, "language", "언어", [("한국어", "ko"), ("English", "en")])
         self._combo(form, "theme", "테마", [("시스템 설정", "system"), ("밝게", "light"), ("어둡게", "dark")])
         font = self._control("font_family", QLineEdit())
@@ -224,9 +238,8 @@ class PreferencesDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
-        self.tabs.addTab(page, "파일연결")
-        self.nav.addItem("파일연결")
+        layout.setSpacing(0)
+        self._add_page(page, "파일연결")
         self.assoc_list = QTreeWidget()
         self.assoc_list.setObjectName("settingsAssocList")
         self.assoc_list.setAccessibleName("연결 가능한 파일 형식 목록")
@@ -248,7 +261,8 @@ class PreferencesDialog(QDialog):
             self.assoc_list.addTopLevelItem(item)
         layout.addWidget(self.assoc_list, 1)
         row = QHBoxLayout()
-        row.setSpacing(6)
+        row.setContentsMargins(16, 12, 16, 16)
+        row.setSpacing(8)
         self._association_selection_buttons = []
         for title, selected in (("전체 선택", True), ("전체 해제", False)):
             button = QPushButton(title)
@@ -258,6 +272,7 @@ class PreferencesDialog(QDialog):
         button = QPushButton("Windows 기본 앱 열기")
         button.clicked.connect(lambda: self._guard("기본 앱 설정", assoc.open_default_apps))
         row.addWidget(button)
+        row.addStretch(1)
         layout.addLayout(row)
 
     def _load_associations(self):
@@ -291,7 +306,7 @@ class PreferencesDialog(QDialog):
             self.assoc_list.blockSignals(False)
 
     def _shell_tab(self):
-        form = self._tab("탐색기", "Windows 탐색기에서 사용할 우클릭 메뉴를 선택하세요.")
+        form = self._tab("탐색기", "Windows 탐색기에서 사용할 우클릭 메뉴를 선택하세요")
         master = self._check(form, "shell_enabled", "탐색기 우클릭 메뉴 사용")
         children = [self._check(form, "shell_compress", "압축하기"),
                     self._check(form, "shell_extract_here", "여기에 풀기"),
@@ -303,20 +318,20 @@ class PreferencesDialog(QDialog):
         master.toggled.connect(lambda on: [widget.setEnabled(on) for widget in children + [multi]])
 
     def _compress_tab(self):
-        form = self._tab("압축", "새 압축 파일을 만들 때 사용할 기본값입니다.")
+        form = self._tab("압축", "새 압축 파일을 만들 때 사용할 기본값")
         fmt = self._combo(form, "compress_format", "기본 형식", [(f.label, f.id) for f in formats.FORMATS])
         self._spin(form, "compress_level", "압축 수준 (0: 저장, 9: 최대)", 0, 9)
         self._path(form, "compress_dir", "저장 폴더")
         split = self._combo(form, "compress_split", "분할 크기", [(s, s) for s in
                             ("분할 안 함", "100MB", "650MB", "700MB", "1440KB", "4GB")])
         split.setEditable(True)
-        self._hint(form, "분할 크기는 직접 입력할 수 있습니다. 예: 250MB (최소 64KB)")
+        self._hint(form, "분할 크기는 직접 입력할 수 있습니다. 예: 250MB (최소 64KB)", field=True)
         fmt.currentIndexChanged.connect(lambda: split.setEnabled(bool(
             formats.BY_ID.get(fmt.currentData()) and formats.BY_ID[fmt.currentData()].split)))
         self._check(form, "compress_open_folder", "압축 후 저장 폴더 열기")
 
     def _extract_tab(self):
-        form = self._tab("해제", "압축을 풀 위치와 같은 이름의 파일 처리 방식을 설정하세요.")
+        form = self._tab("해제", "압축을 풀 위치와 같은 이름의 파일 처리 방식을 설정하세요")
         self._path(form, "extract_dir", "해제 폴더")
         self._check(form, "extract_smart", "알아서 풀기 (내용에 맞춰 하위 폴더 생성)")
         self._combo(form, "extract_mode", "같은 이름의 파일", [("물어보기", "ask"),
@@ -324,16 +339,16 @@ class PreferencesDialog(QDialog):
         self._check(form, "extract_open_folder", "해제 후 폴더 열기")
 
     def _performance_tab(self):
-        form = self._tab("성능", "작업에 사용할 시스템 자원과 임시 저장 위치를 관리하세요.")
+        form = self._tab("성능", "작업에 사용할 시스템 자원과 임시 저장 위치를 관리하세요")
         self._check(form, "low_priority", "낮은 우선순위로 작업")
         threads = self._spin(form, "worker_threads", "작업 스레드 수", 0, 256)
         threads.setSpecialValueText("자동")
         self._path(form, "temp_dir", "임시 폴더")
         self._button(form, "MxZip 임시 파일 정리…", self._cleanup_temp)
-        self._hint(form, "정리 전에 대상 파일과 폴더를 확인할 수 있습니다.")
+        self._hint(form, "정리 전에 대상 파일과 폴더를 확인할 수 있습니다")
 
     def _update_tab(self):
-        form = self._tab("업데이트", "새 버전을 확인하고 최근 확인 결과를 살펴보세요.")
+        form = self._tab("업데이트", "새 버전을 확인하고 최근 확인 결과를 살펴보세요")
         form.addRow("현재 버전", QLabel(__version__))
         self.auto_update_check = self._check(form, "auto_update", "업데이트 자동 확인")
         self.check_update_button = self._button(form, "지금 업데이트 확인", self._check_update)
@@ -345,12 +360,12 @@ class PreferencesDialog(QDialog):
         form.addRow("마지막 결과", self.last_result_label)
 
     def _management_tab(self):
-        form = self._tab("설정관리", "설정을 백업하거나 복원하고 프로그램 정보를 확인하세요.")
+        form = self._tab("설정관리", "설정을 백업하거나 복원하고 프로그램 정보를 확인하세요")
         self._button(form, "설정 초기화…", self._reset)
         self._button(form, "설정 가져오기 (JSON)…", self._import_settings)
         self._button(form, "설정 내보내기 (JSON)…", self._export_settings)
         self._hint(form, "초기화와 가져오기는 저장 버튼을 눌러야 저장됩니다. 파일연결과 업데이트 기록은 포함하지 않습니다.")
-        form.addRow(self._separator())
+        self._gap(form)
         self._button(form, "오류 로그 폴더 열기", self._open_log_folder)
         self._button(form, "MxZip 정보", self._about)
         self._button(form, "라이선스 보기", self._licenses)
@@ -607,8 +622,8 @@ class PreferencesDialog(QDialog):
         dialog.setWindowTitle("MxZip 및 포함 소프트웨어 라이선스")
         dialog.resize(700, 500)
         layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(24, 22, 24, 18)
-        layout.setSpacing(16)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(12)
         title = QLabel("라이선스")
         title.setObjectName("settingsTitle")
         layout.addWidget(title)

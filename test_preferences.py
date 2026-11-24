@@ -87,8 +87,9 @@ class PreferencesTests(unittest.TestCase):
         self.assertEqual(dialog.objectName(), "settingsDialog")
         self.assertIs(dialog.findChild(QListWidget, "settingsNav"), dialog.nav)
         self.assertIsNotNone(dialog.findChild(QWidget, "settingsBody"))
-        self.assertIsNotNone(dialog.findChild(QLabel, "settingsTitle"))
-        self.assertIsNotNone(dialog.findChild(QLabel, "settingsSubtitle"))
+        # The window caption names the dialog; the body no longer repeats it.
+        self.assertIsNone(dialog.findChild(QLabel, "settingsTitle"))
+        self.assertIsNone(dialog.findChild(QLabel, "settingsSubtitle"))
         self.assertEqual(dialog.nav.count(), 8)
         self.assertTrue(dialog.tabs.tabBar().isHidden())
         self.assertEqual((dialog.width(), dialog.height()), (920, 650))

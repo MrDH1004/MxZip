@@ -14,6 +14,8 @@ from PySide6.QtGui import QAction, QColor, QFont, QPalette
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QGroupBox,
                                QLabel, QListWidget, QMenu, QSpinBox, QStatusBar, QTabBar, QTreeWidget, QWidget)
 
+from ui_theme import chevron
+
 
 TRANSLATIONS = dict(tuple(part.replace(r"\n", "\n") for part in line.split("|", 1)) for line in r"""
 일반|General
@@ -202,7 +204,7 @@ Windows 기본 앱 열기|Open Windows default apps
 해제 후 폴더 열기|Open folder after extraction
 낮은 우선순위로 작업|Run at low priority
 MxZip 임시 파일 정리…|Clean MxZip temporary files…
-정리 전에 대상 파일과 폴더를 확인할 수 있습니다.|Review the files and folders before cleanup.
+정리 전에 대상 파일과 폴더를 확인할 수 있습니다|Review the files and folders before cleanup
 현재 버전|Current version
 지금 업데이트 확인|Check for updates now
 마지막 확인|Last checked
@@ -230,20 +232,19 @@ MxZip 및 포함 소프트웨어 라이선스|MxZip and bundled software license
 # Anchored patterns keep filenames/error payloads opaque; no substring replacement
 # on arbitrary plain text. HTML is split into text nodes before translation.
 TRANSLATIONS.update({
-    "MxZip의 작업 방식과 사용 환경을 설정하세요.": "Choose how MxZip works and looks.",
-    "변경한 설정은 저장을 누르면 적용됩니다.": "Select Save to apply your changes.",
+    "변경한 설정은 저장을 누르면 적용됩니다": "Select Save to apply your changes",
     "설정 섹션": "Settings sections",
-    "언어와 화면 표시를 원하는 방식으로 맞추세요.": "Choose your language and display preferences.",
+    "언어와 화면 표시를 원하는 방식으로 맞추세요": "Choose your language and display preferences",
     "MxZip으로 열 파일 형식을 선택하세요.": "Choose which file types to open with MxZip.",
     "확장자 또는 파일 형식 검색": "Search extensions or file types",
     "검색 결과가 없습니다.": "No results found.",
     "검색은 목록만 필터링하며 선택한 연결은 유지됩니다.": "Filtering keeps your file association selections.",
-    "Windows 탐색기에서 사용할 우클릭 메뉴를 선택하세요.": "Choose the context menu items to show in File Explorer.",
-    "새 압축 파일을 만들 때 사용할 기본값입니다.": "Defaults for creating new archives.",
-    "압축을 풀 위치와 같은 이름의 파일 처리 방식을 설정하세요.": "Choose an extraction folder and how to handle existing files.",
-    "작업에 사용할 시스템 자원과 임시 저장 위치를 관리하세요.": "Manage processing limits and temporary storage.",
-    "새 버전을 확인하고 최근 확인 결과를 살펴보세요.": "Check for updates and review the last result.",
-    "설정을 백업하거나 복원하고 프로그램 정보를 확인하세요.": "Back up or restore settings and view application information.",
+    "Windows 탐색기에서 사용할 우클릭 메뉴를 선택하세요": "Choose the context menu items to show in File Explorer",
+    "새 압축 파일을 만들 때 사용할 기본값": "Defaults for creating new archives",
+    "압축을 풀 위치와 같은 이름의 파일 처리 방식을 설정하세요": "Choose an extraction folder and how to handle existing files",
+    "작업에 사용할 시스템 자원과 임시 저장 위치를 관리하세요": "Manage processing limits and temporary storage",
+    "새 버전을 확인하고 최근 확인 결과를 살펴보세요": "Check for updates and review the last result",
+    "설정을 백업하거나 복원하고 프로그램 정보를 확인하세요": "Back up or restore settings and view application information",
     "압축 파일 작업, 간편하게": "Archive tasks, made simple",
     "압축을 만들고 풀 때 필요한 도구를 한곳에.": "Create and extract archives in one place.",
     "파일이나 폴더를 여기에 놓으세요": "Drop files or folders here",
@@ -333,7 +334,7 @@ def translate_text(text: str) -> str:
     return text
 
 
-_DARK = {"#ffffff": "#20242b", "#1f2328": "#e6edf3", "#57606a": "#b1bac4",
+_DARK = {"#1f2328": "#e6edf3", "#57606a": "#b1bac4",
          "#6e7781": "#a7b0bb", "#8c959f": "#9ba6b3", "#d0d7de": "#454d59",
          "#eef1f4": "#343c47", "#f0f2f5": "#303844", "#e9edf2": "#343c47",
          "#f3f5f8": "#303844", "#b6bfc9": "#596575", "#e6e9ee": "#3d4755",
@@ -342,9 +343,13 @@ _DARK = {"#ffffff": "#20242b", "#1f2328": "#e6edf3", "#57606a": "#b1bac4",
          "#fff8c5": "#453b20", "#f2e3a0": "#75632a", "#9a6700": "#e3b341",
          "#d5dbe2": "#454d59", "#fafbfc": "#252b33", "#f2f6ff": "#253750",
          "#f5f7fa": "#303844"}
-_DARK.update({"#f4f6f7": "#161e24", "#202d35": "#e6edf3", "#64737d": "#a6b5bf",
-              "#dce3e6": "#384650", "#16776a": "#16776a", "#116457": "#116457",
-              "#eaf4f1": "#203c36", "#f8fafb": "#1b272f", "#e6eeee": "#344a4c"})
+# ui_theme tokens: page, card, raised, pressed, hairlines, text ramp, accent ramp, selection.
+_DARK.update({"#fafafa": "#141415", "#ffffff": "#19191b", "#f4f4f5": "#232325", "#e9e9eb": "#2a2a2d",
+              "#e4e4e7": "#2e2e31", "#d4d4d8": "#3a3a3e", "#171717": "#ededed", "#3f3f46": "#bdbdc2",
+              "#5f5f66": "#9c9ca2", "#a3a3a3": "#5c5c62", "#2f5bd3": "#7c9cf5", "#284fbb": "#93aef7",
+              "#2244a3": "#6a8ae6", "#e8eefb": "#1f2a44"})
+_ACCENT_TEXT_DARK = "#93aef7"   # accent used as text/link colour on dark surfaces
+_ON_ACCENT_DARK = "#0f0f10"     # text on an accent fill (light theme: #ffffff)
 
 
 class AppearanceController(QObject):
@@ -358,6 +363,7 @@ class AppearanceController(QObject):
         # its Korean source. QObject destruction releases these records instead.
         self.records = {}
         self.busy = False
+        self._overriding_scheme = False
         self.language = "ko"
         self.theme = "system"
         self.dark = False
@@ -380,6 +386,14 @@ class AppearanceController(QObject):
         settings = load_settings()
         self.language = settings.get("language", "ko")
         self.theme = settings.get("theme", "system")
+        # Native parts (checkbox strokes, scrollbars) follow the scheme hint, not the palette.
+        # Our own override is not a system change, so _scheme_changed ignores it.
+        self._overriding_scheme = True
+        try:
+            self.app.styleHints().setColorScheme({"dark": Qt.ColorScheme.Dark, "light": Qt.ColorScheme.Light}
+                                                 .get(self.theme, Qt.ColorScheme.Unknown))
+        finally:
+            self._overriding_scheme = False
         self.dark = self.theme == "dark" or (self.theme == "system" and
                     self.app.styleHints().colorScheme() == Qt.ColorScheme.Dark)
         self.font = QFont(self.default_font)
@@ -390,29 +404,34 @@ class AppearanceController(QObject):
         try:
             self.app.setFont(self.font)
             palette = QPalette(self.default_palette)
-            colors = {QPalette.Window: "#20242b", QPalette.WindowText: "#e6edf3",
-                      QPalette.Base: "#20242b", QPalette.AlternateBase: "#252b33",
-                      QPalette.Text: "#e6edf3", QPalette.Button: "#303844",
-                      QPalette.ButtonText: "#e6edf3", QPalette.ToolTipBase: "#303844",
-                      QPalette.ToolTipText: "#e6edf3", QPalette.Highlight: "#16776a",
-                      QPalette.HighlightedText: "#ffffff", QPalette.PlaceholderText: "#9ba6b3"}
+            colors = {QPalette.Window: "#19191b", QPalette.WindowText: "#ededed",
+                      QPalette.Base: "#19191b", QPalette.AlternateBase: "#141415",
+                      QPalette.Text: "#ededed", QPalette.Button: "#232325",
+                      QPalette.ButtonText: "#ededed", QPalette.ToolTipBase: "#232325",
+                      QPalette.ToolTipText: "#ededed", QPalette.Highlight: "#1f2a44",
+                      QPalette.HighlightedText: "#ededed", QPalette.PlaceholderText: "#9c9ca2",
+                      QPalette.Accent: "#7c9cf5", QPalette.Link: "#93aef7"}
+            disabled = "#5c5c62"
             if not self.dark:
-                colors.update({QPalette.Window: "#ffffff", QPalette.WindowText: "#1f2328",
-                               QPalette.Base: "#ffffff", QPalette.Text: "#1f2328",
-                               QPalette.Button: "#f3f5f8", QPalette.ButtonText: "#1f2328",
-                               QPalette.AlternateBase: "#f5f7fa", QPalette.ToolTipBase: "#ffffff",
-                               QPalette.ToolTipText: "#1f2328", QPalette.PlaceholderText: "#6e7781"})
+                colors.update({QPalette.Window: "#ffffff", QPalette.WindowText: "#171717",
+                               QPalette.Base: "#ffffff", QPalette.Text: "#171717",
+                               QPalette.Button: "#f4f4f5", QPalette.ButtonText: "#171717",
+                               QPalette.AlternateBase: "#fafafa", QPalette.ToolTipBase: "#ffffff",
+                               QPalette.ToolTipText: "#171717", QPalette.Highlight: "#e8eefb",
+                               QPalette.HighlightedText: "#171717", QPalette.PlaceholderText: "#5f5f66",
+                               QPalette.Accent: "#2f5bd3", QPalette.Link: "#2f5bd3"})
+                disabled = "#a3a3a3"
             for role, color in colors.items():
                 palette.setColor(role, QColor(color))
-            palette.setColor(QPalette.Disabled, QPalette.Text, QColor("#76808d"))
-            palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor("#76808d"))
+            palette.setColor(QPalette.Disabled, QPalette.Text, QColor(disabled))
+            palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(disabled))
             self.app.setPalette(palette)
         finally:
             self.busy = False
         self.refresh()
 
     def _scheme_changed(self, *_):
-        if self.theme == "system":
+        if self.theme == "system" and not self._overriding_scheme:
             self.reload()
 
     def _value(self, obj, key, current, transform):
@@ -429,12 +448,14 @@ class AppearanceController(QObject):
 
     def _style(self, value):
         if self.dark:
-            # Keep white-on-accent buttons legible while using a lighter accent
-            # for links and status text on a dark surface.
-            value = re.sub(r"(?<![\w-])(color\s*:\s*)#16776a\b", r"\1#74c8b8", value, flags=re.I)
-            # White foreground on accent buttons/badges must remain white.
+            # Accent used as text (links, status) gets a lighter tint than accent fills.
+            value = re.sub(r"(?<![\w-])(color\s*:\s*)#2f5bd3\b", r"\g<1>" + _ACCENT_TEXT_DARK, value, flags=re.I)
+            # Arrow images carry their colour in the file name (ui_theme.chevron).
+            value = re.sub(r"url\(\"([^\"]*)chevron-([0-9a-f]{6})\.png\"\)",
+                           lambda m: 'url("%s")' % chevron(_DARK.get("#" + m[2], "#" + m[2])), value)
             value = re.sub(r"#[0-9a-fA-F]{6}\b", lambda m: _DARK.get(m[0].lower(), m[0]), value)
-            value = re.sub(r"(?<![\w-])(color\s*:\s*)#20242b", r"\1#ffffff", value)
+            # Foreground #ffffff only sits on accent fills; the dark accent is light, so use dark text.
+            value = re.sub(r"(?<![\w-])(color\s*:\s*)" + _DARK["#ffffff"], r"\g<1>" + _ON_ACCENT_DARK, value)
         family = self.font.family().replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ")
         value = re.sub(r"font-family\s*:[^;}]+", lambda _: f"font-family: '{family}'", value)
         # Scale the designed type hierarchy, preserving headings and helper text.
