@@ -75,7 +75,7 @@ MxZip 환경설정|MxZip Preferences
 암호를 입력하면 AES-256으로 암호화되고 파일 이름도 숨겨집니다.|Enter a password to encrypt with AES-256 and hide file names.
 암호가 서로 다릅니다.|Passwords do not match.
 암호가 틀렸습니다.|Incorrect password.
-분할 크기를 이해할 수 없습니다. 예: 100MB, 1440KB (최소 64KB)|Invalid volume size. Examples: 100MB, 1440KB (minimum 64KB)
+분할 크기 예: 100MB, 1440KB (최소 64KB)|Volume size examples: 100MB, 1440KB (minimum 64KB)
 풀 위치|Destination
 폴더|Folder
 폴더 열기|Open folder
@@ -133,13 +133,14 @@ MxZip 정보|About MxZip
 파일 형식|File type
 지금 여는 프로그램|Current application
 연결 가능한 파일 형식 목록|Associable file types
-이상 없음: 모든 항목이 정상입니다.|No errors: all items passed verification.
+이상 없음.|No errors.
 알 수 없는 오류|Unknown error
 취소됨|Cancelled
 제거했습니다.|Removed.
-분할 압축은 수정할 수 없습니다. 먼저 하나로 합쳐 주세요.|Split archives cannot be modified. Combine the volumes first.
-파일 추가·삭제는 ZIP 형식에서만 됩니다. 다른 형식은 풀어서 새로 압축해 주세요.|Only ZIP supports adding or deleting files. Extract other formats and create a new archive.
-이 위치에는 관리자 권한이 있어야 파일을 만들 수 있습니다. 다른 위치를 선택해 주세요.|Administrator permission is required to create files here. Choose another location.
+분할 압축은 수정할 수 없습니다.|Split archives cannot be modified.
+파일 추가·삭제는 ZIP에서만 됩니다.|Only ZIP supports adding or deleting files.
+끝부분이 잘린 ZIP이라 수정할 수 없습니다.|A ZIP that is cut short cannot be modified.
+등록했습니다.\nWindows 11: 우클릭 → '더 많은 옵션 표시'(Shift+F10)|Registered.\nWindows 11: right-click → 'Show more options' (Shift+F10)
 다른 위치에 저장...|Save elsewhere...
 다른 위치에 저장|Save elsewhere
 압축할 파일 선택|Select files to compress
@@ -278,6 +279,9 @@ _PATTERNS = [
     (r"업데이트 내려받는 중 \((.+)\)", r"Downloading update (\1)"),
     (r"(.+) 형식은 암호를 지원하지 않습니다\.", r"The \1 format does not support passwords."),
     (r"걸린 시간 (.+)", r"Elapsed time \1"),
+    (r"손상된 파일 ([\d,]+)개를 건너뛰었습니다\.\n\n(.*)\n\n원본을 다시 받으면 모두 풀립니다\.",
+     r"Skipped \1 damaged files.\n\n\2\n\nDownload the original again to extract them all."),
+    (r"손상된 항목 ([\d,]+)개:\n(.*)", r"Damaged items (\1):\n\2"),
     (r"([\d,]+)개 선택 \(([\d,]+)개 파일 포함\)", r"\1 selected (\2 files)"),
     (r"([\d,]+)개 선택", r"\1 selected"),
     (r"([\d,]+)개 항목", r"\1 items"),
@@ -290,7 +294,9 @@ _PATTERNS = [
 ]
 _PREFIXES = {"열 수 없습니다: ": "Cannot open: ", "업데이트를 확인하지 못했습니다.\n": "Could not check for updates.\n",
              "파일 연결을 변경하지 못했습니다.\n": "Could not change file associations.\n",
-             "손상된 항목:\n": "Damaged items:\n", "압축하기 ": "Compressing ",
+             "쓸 수 없는 위치입니다. 다른 위치를 고르세요.\n": "Cannot write here. Choose another location.\n",
+             "쓸 수 없는 위치입니다. 다른 위치에 저장할까요?\n": "Cannot write here. Save elsewhere?\n",
+             "압축하기 ": "Compressing ",
              "풀기 완료: ": "Extracted: ", "완료: ": "Completed: "}
 _PREFIXES.update({"열기·풀기: ": "Open and extract: ", "만들기: ": "Create: ", "압축 만들기: ": "Create archives: "})
 

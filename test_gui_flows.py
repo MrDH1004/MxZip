@@ -451,7 +451,7 @@ def test_formats_gui():
     w2.tree.topLevelItem(0).setSelected(True)
     w2.delete_selected()
     check("delete on a 7z: explained as ZIP-only, archive untouched",
-          any("ZIP 형식에서만" in b[1] for b in boxes) and os.path.exists(z7), repr(boxes))
+          any("ZIP에서만" in b[1] for b in boxes) and os.path.exists(z7), repr(boxes))
 
     # tar.gz: path and options follow the format; extract-here through main() opens it by content
     t = fresh()

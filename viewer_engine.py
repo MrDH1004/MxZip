@@ -102,7 +102,7 @@ def _failure(e: BaseException) -> dict:
         return {"ok": False, "error": "cancel", "message": "취소했습니다."}
     if isinstance(e, FileNotFoundError):
         return {"ok": False, "error": "missing",
-                "message": f"파일을 찾을 수 없습니다: {e.filename or ''}\n옮겨지거나 지워졌는지 확인하고 다시 여세요."}
+                "message": f"파일을 찾을 수 없습니다: {os.path.basename(str(e.filename or ''))}"}
     return {"ok": False, "error": "message", "message": _explain(e)}
 
 
@@ -118,16 +118,18 @@ def _explain(e: BaseException) -> str:
     errno = getattr(e, "errno", None)
     winerror = getattr(e, "winerror", None)
     if isinstance(e, PermissionError) and winerror in (32, 33):  # sharing / lock violation
-        advice = "다른 프로그램이 파일을 쓰고 있습니다. 그 프로그램을 닫고 다시 시도하세요."
+        advice = "다른 프로그램이 파일을 쓰고 있습니다. 닫고 다시 시도하세요."
     elif isinstance(e, PermissionError):
-        advice = "이 위치에 쓸 권한이 없습니다. 다른 폴더를 골라 다시 시도하세요."
+        advice = "이 위치에 쓸 권한이 없습니다. 다른 폴더를 고르세요."
     elif errno == 28 or winerror in (39, 112):  # no space left
-        advice = "디스크 공간이 부족합니다. 공간을 비운 뒤 다시 시도하세요."
+        advice = "디스크 공간이 부족합니다."
     elif isinstance(e, OSError):
-        advice = "파일을 읽거나 쓰지 못했습니다. 경로와 저장 장치를 확인하고 다시 시도하세요."
+        advice = "파일을 읽거나 쓰지 못했습니다."
     else:
-        advice = "압축 파일이 손상되었을 수 있습니다. '오류 검사'로 확인하거나 원본을 다시 받아 보세요."
-    return f"{advice}\n\n({detail})"
+        advice = "압축 파일이 손상되었을 수 있습니다. 원본을 다시 받아 보세요."
+    if len(detail) > 120:
+        detail = detail[:117] + "..."
+    return f"{advice}\n({detail})"
 
 
 def _run(result: str, work) -> int:
@@ -214,7 +216,7 @@ def delete_json(args: list[str]) -> int:
     def work():
         import ziplib
         if not _editable(archive):
-            raise UserError("파일 삭제는 ZIP 형식에서만 됩니다. 다른 형식은 풀어서 새로 압축하세요.")
+            raise UserError("파일 삭제는 ZIP에서만 됩니다.")
         ziplib.edit_zip(archive, drop=tuple(members), progress=progress, cancel=cancel)
     return _run(result, work)
 
@@ -227,7 +229,7 @@ def add_json(args: list[str]) -> int:
     def work():
         import ziplib
         if not _editable(archive):
-            raise UserError("파일 추가는 ZIP 형식에서만 됩니다. 다른 형식은 풀어서 새로 압축하세요.")
+            raise UserError("파일 추가는 ZIP에서만 됩니다.")
         ziplib.edit_zip(archive, add=paths, password=_password(options), progress=progress, cancel=cancel,
                         into=_option(options, "--into"))
     return _run(result, work)
@@ -270,8 +272,7 @@ def _recycle(paths: list[str]) -> None:
     shell32.SHFileOperationW.restype = ctypes.c_int
     code = shell32.SHFileOperationW(ctypes.byref(op))
     if code != 0 or op.fAnyOperationsAborted:
-        raise UserError("압축은 끝났지만 원본을 휴지통으로 옮기지 못했습니다. 원본은 그대로 있습니다."
-                        f" 직접 지우세요. (코드 {code:#x})")
+        raise UserError(f"압축은 끝났지만 원본을 휴지통으로 옮기지 못했습니다. (코드 {code:#x})")
 
 
 def create_json(args: list[str]) -> int:
@@ -322,9 +323,9 @@ def create_json(args: list[str]) -> int:
                 with formats.open_any(arc, password) as z:
                     bad = list(z.test(progress=progress, cancel=cancel) or [])
                 if bad:
-                    raise UserError(f"압축 후 테스트에서 손상된 항목이 있습니다: {os.path.basename(arc)}\n"
-                                    + "\n".join(bad[:20]) + ("\n..." if len(bad) > 20 else "")
-                                    + "\n\n원본은 지우지 않았습니다.")
+                    more = f"\n외 {len(bad) - 5}개" if len(bad) > 5 else ""
+                    raise UserError(f"압축 후 테스트 실패: {os.path.basename(arc)}\n" + "\n".join(bad[:5]) + more
+                                    + "\n원본은 지우지 않았습니다.")
         if "--delete-source" in options:
             _recycle(items)
         return {"outputs": outputs}

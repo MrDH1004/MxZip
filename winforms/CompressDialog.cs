@@ -884,7 +884,7 @@ sealed class CompressDialog : Form
         }
         catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            Warn("파일 이름에 전체 경로를 적으세요. 예: C:\\자료\\새 압축.zip\n'...' 단추로 위치를 고를 수도 있습니다.");
+            Warn("파일 이름에 전체 경로를 적으세요. 예: C:\\자료\\새 압축.zip");
             pathBox.Focus();
             return;
         }
@@ -900,7 +900,7 @@ sealed class CompressDialog : Form
                 split = ParseSize(customSplit.Text);
                 if (split < 64 * KB)
                 {
-                    Warn("분할 크기를 이해할 수 없습니다. 숫자와 단위로 적으세요. 예: 123MB, 1.5GB, 1440KB (최소 64KB)");
+                    Warn("분할 크기 예: 100MB, 1.5GB (최소 64KB)");
                     customSplit.Focus();
                     return;
                 }
@@ -910,13 +910,13 @@ sealed class CompressDialog : Form
         string folder = Path.GetDirectoryName(output) ?? output;
         if (!CanWrite(folder))
         {
-            Warn($"{folder}\n\n이 위치에는 관리자 권한이 있어야 파일을 만들 수 있습니다. 다른 위치를 고르세요.");
+            Warn($"쓸 수 없는 위치입니다. 다른 위치를 고르세요.\n{folder}");
             return;
         }
         bool each = eachCheck.Checked;
         if (!each && paths.Any(p => string.Equals(p, output, StringComparison.OrdinalIgnoreCase)))
         {
-            Warn("압축할 파일과 같은 이름으로는 만들 수 없습니다. 다른 파일 이름을 고르세요.");
+            Warn("원본과 같은 이름은 쓸 수 없습니다.");
             return;
         }
         if (!each && File.Exists(output) &&
@@ -924,7 +924,7 @@ sealed class CompressDialog : Form
                             MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             return;
         if (deleteCheck.Checked &&
-            MessageBox.Show(this, $"압축이 끝나면 원본 {paths.Count:N0}개 항목을 휴지통으로 옮깁니다. 계속할까요?", "새 압축",
+            MessageBox.Show(this, $"압축 후 원본 {paths.Count:N0}개를 휴지통으로 옮깁니다. 계속할까요?", "새 압축",
                             MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
             return;
 

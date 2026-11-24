@@ -851,7 +851,7 @@ def edit_zip(path: str, drop: Iterable[str] = (), renames: Optional[dict] = None
     replace entries of the same name; they are encrypted with `password` when one is given. into: folder inside
     the archive ("a/b/") the added files go to."""
     if is_split_first(path):
-        raise ValueError("분할 압축은 수정할 수 없습니다. 먼저 하나로 합쳐 주세요.")
+        raise ValueError("분할 압축은 수정할 수 없습니다.")
     drop, renames = list(drop), dict(renames or {})
     into = into.strip("/") + "/" if into.strip("/") else ""
     items = [(p, into + n) for p, n in collect_items(add)] if add else []

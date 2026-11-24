@@ -99,7 +99,7 @@ static class PasswordDialog
             }
             if (!string.Equals(box.Text, again.Text, StringComparison.Ordinal))
             {
-                MessageBox.Show(form, "암호와 암호 확인이 서로 다릅니다. 다시 입력하세요.", "암호 설정", MessageBoxButtons.OK,
+                MessageBox.Show(form, "암호가 서로 다릅니다.", "암호 설정", MessageBoxButtons.OK,
                                 MessageBoxIcon.Warning);
                 again.Focus();
                 again.SelectAll();

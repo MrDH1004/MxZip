@@ -493,8 +493,8 @@ sealed class ViewerForm : Form
         string keep = folders.ContainsKey(current) ? current : "";
         ShowFolder(keep);
         if (r.Bad.Count > 0)  // a ZIP cut short: named once on opening, counted in the summary afterwards
-            statusText.Text = $"손상된 파일 {r.Bad.Count:N0}개는 목록에서 뺐습니다 ({string.Join(", ", r.Bad.Take(3))}" +
-                              (r.Bad.Count > 3 ? " 외" : "") + "). 나머지는 풀 수 있습니다.";
+            statusText.Text = $"손상된 파일 {r.Bad.Count:N0}개 제외: {string.Join(", ", r.Bad.Take(2))}" +
+                              (r.Bad.Count > 2 ? " 외" : "");
     }
 
     void Reload() => _ = LoadArchive(archive!, Engine.List(archive!, password));
@@ -603,8 +603,8 @@ sealed class ViewerForm : Form
     {
         long files = entries.Count(e => !e.IsDir), total = entries.Where(e => !e.IsDir).Sum(e => e.Size);
         statusText.Text = $"{format} · 파일 {files:N0}개 · {FormatSize(total)}" + (password != null ? " · 암호 사용" : "") +
-                          (damaged.Count > 0 ? $" · 손상된 파일 {damaged.Count:N0}개 제외(끝부분이 잘린 ZIP, 읽기 전용)" :
-                           editable ? "" : " · 읽기 전용(파일 추가·삭제는 ZIP만)");
+                          (damaged.Count > 0 ? $" · 손상 {damaged.Count:N0}개 제외 · 읽기 전용" :
+                           editable ? "" : " · 읽기 전용");
     }
 
     internal static string FormatSize(long n) => n < 1024 ? $"{n:N0} B" :
@@ -837,7 +837,7 @@ sealed class ViewerForm : Form
         statusText.Text = $"풀었습니다: {dest}";
         if (r.Bad.Count > 0)
         {
-            statusText.Text = $"풀었습니다 (손상된 파일 {r.Bad.Count:N0}개 건너뜀): {dest}";
+            statusText.Text = $"풀었습니다 (손상 {r.Bad.Count:N0}개 건너뜀): {dest}";
             Warn(SkippedText(r.Bad));
         }
         if (settings.ExtractOpenFolder || members.Count > 0)
@@ -846,9 +846,11 @@ sealed class ViewerForm : Form
 
     /// <summary>After extracting a ZIP cut short: which members were left out, and what to do about it.</summary>
     static string SkippedText(List<string> names) =>
-        $"나머지 파일은 풀었지만, 손상된 파일 {names.Count:N0}개는 건너뛰었습니다.\n\n" +
-        string.Join("\n", names.Take(20)) + (names.Count > 20 ? $"\n외 {names.Count - 20:N0}개" : "") +
-        "\n\n압축 파일이 끝까지 받아지지 않았거나 복사가 중간에 끊긴 것 같습니다. 원본을 다시 받으면 모두 풀 수 있습니다.";
+        $"손상된 파일 {names.Count:N0}개를 건너뛰었습니다.\n\n" + Names(names, 5) + "\n\n원본을 다시 받으면 모두 풀립니다.";
+
+    /// <summary>The first few names, one per line, and how many more there are.</summary>
+    static string Names(List<string> names, int max) =>
+        string.Join("\n", names.Take(max)) + (names.Count > max ? $"\n외 {names.Count - max:N0}개" : "");
 
     string? ChooseFolder(string title, string start)
     {
@@ -868,9 +870,9 @@ sealed class ViewerForm : Form
         if (!r.Ok)
             Warn(r.Message);
         else if (r.Bad.Count > 0)
-            Warn("손상된 항목이 있습니다:\n" + string.Join("\n", r.Bad.Take(30)) + (r.Bad.Count > 30 ? $"\n외 {r.Bad.Count - 30}개" : ""));
+            Warn($"손상된 항목 {r.Bad.Count:N0}개:\n" + Names(r.Bad, 10));
         else
-            Info("이상 없음: 모든 항목이 정상입니다.");
+            Info("이상 없음.");
     }
 
     void AddFilesDialog()
@@ -1008,8 +1010,7 @@ sealed class ViewerForm : Form
         if (!request.Each || r.Outputs.Count == 1)
             OpenArchive(r.Outputs[0]);  // a split ZIP opens from its first volume (.zip.001)
         else
-            Info($"압축 파일 {r.Outputs.Count:N0}개를 만들었습니다.\n\n" + string.Join("\n", r.Outputs.Take(20)) +
-                 (r.Outputs.Count > 20 ? $"\n외 {r.Outputs.Count - 20}개" : ""));
+            Info($"압축 파일 {r.Outputs.Count:N0}개를 만들었습니다.\n\n" + Names(r.Outputs.Select(o => Path.GetFileName(o)).ToList(), 10));
     }
 
     static readonly HashSet<string> ArchiveExts = new(StringComparer.OrdinalIgnoreCase)

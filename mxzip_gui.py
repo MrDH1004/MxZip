@@ -247,9 +247,8 @@ MIN_SHOWN = 0.6  # seconds a finished progress window stays visible
 
 def skipped_text(names: list[str]) -> str:
     """After extracting a cut-short ZIP: which members were damaged and left out, and what to do."""
-    shown = "\n".join(names[:20]) + (f"\n외 {len(names) - 20}개" if len(names) > 20 else "")
-    return (f"나머지 파일은 풀었지만, 손상된 파일 {len(names)}개는 건너뛰었습니다.\n\n{shown}\n\n"
-            "압축 파일이 끝까지 받아지지 않았거나 복사가 중간에 끊긴 것 같습니다. 원본을 다시 받으면 모두 풀 수 있습니다.")
+    shown = "\n".join(names[:5]) + (f"\n외 {len(names) - 5}개" if len(names) > 5 else "")
+    return f"손상된 파일 {len(names)}개를 건너뛰었습니다.\n\n{shown}\n\n원본을 다시 받으면 모두 풀립니다."
 
 
 def run_job(parent, title, fn, reveal=None, done_text="작업을 완료했습니다.", job=None):
@@ -416,13 +415,12 @@ class CompressDialog(QDialog):
             QMessageBox.warning(self, APP, "암호가 서로 다릅니다.")
             return
         if self.split_bytes() < 0:
-            QMessageBox.warning(self, APP, "분할 크기를 이해할 수 없습니다. 예: 100MB, 1440KB (최소 64KB)")
+            QMessageBox.warning(self, APP, "분할 크기 예: 100MB, 1440KB (최소 64KB)")
             return
         out = self.options()["out_path"]
         import appcore
         if not appcore.can_write(os.path.dirname(os.path.abspath(out))):
-            QMessageBox.warning(self, APP, f"{os.path.dirname(os.path.abspath(out))}\n\n이 위치에는 관리자 권한이 "
-                                           "있어야 파일을 만들 수 있습니다. 다른 위치를 선택해 주세요.")
+            QMessageBox.warning(self, APP, f"쓸 수 없는 위치입니다. 다른 위치를 고르세요.\n{os.path.dirname(os.path.abspath(out))}")
             return
         if os.path.exists(out) and QMessageBox.question(
                 self, APP, f"{os.path.basename(out)} 파일이 이미 있습니다. 덮어쓸까요?") != QMessageBox.Yes:
@@ -521,8 +519,7 @@ class ExtractDialog(QDialog):
     def _ok(self):
         import appcore
         if not appcore.can_write(self.dest.text()):
-            QMessageBox.warning(self, APP, f"{self.dest.text()}\n\n이 위치에는 관리자 권한이 있어야 파일을 만들 수 "
-                                           "있습니다. 다른 위치를 선택해 주세요.")
+            QMessageBox.warning(self, APP, f"쓸 수 없는 위치입니다. 다른 위치를 고르세요.\n{self.dest.text()}")
             return
         self.accept()
 
@@ -549,8 +546,8 @@ def writable_target(parent, target: str, elevate_args, pick, folder: str | None 
     if not appcore.can_write(folder) and appcore.run_elevated(elevate_args()):
         return None
     while not appcore.can_write(folder):
-        box = QMessageBox(QMessageBox.Warning, APP, f"{folder}\n\n이 위치에는 관리자 권한이 있어야 파일을 만들 수 "
-                                                    "있습니다. 다른 위치에 저장할까요?", parent=parent)
+        box = QMessageBox(QMessageBox.Warning, APP, f"쓸 수 없는 위치입니다. 다른 위치에 저장할까요?\n{folder}",
+                          parent=parent)
         other = box.addButton("다른 위치에 저장...", QMessageBox.AcceptRole)
         box.addButton("취소", QMessageBox.RejectRole)
         box.exec()
@@ -1550,14 +1547,13 @@ class Main(QMainWindow):
         if not self.arc_path:
             return False
         if ziplib.is_split_first(self.arc_path):
-            QMessageBox.information(self, APP, "분할 압축은 수정할 수 없습니다. 먼저 하나로 합쳐 주세요.")
+            QMessageBox.information(self, APP, "분할 압축은 수정할 수 없습니다.")
             return False
         if not formats.is_zip(self.arc_path):
-            QMessageBox.information(self, APP, "파일 추가·삭제는 ZIP 형식에서만 됩니다. 다른 형식은 풀어서 새로 압축해 주세요.")
+            QMessageBox.information(self, APP, "파일 추가·삭제는 ZIP에서만 됩니다.")
             return False
         if not zipfile.is_zipfile(self.arc_path):  # opened by rebuilding its directory (zipscan): read-only
-            QMessageBox.information(self, APP, "끝부분이 잘린 ZIP 파일이라 파일을 추가하거나 삭제할 수 없습니다. "
-                                               "풀어서 새로 압축해 주세요.")
+            QMessageBox.information(self, APP, "끝부분이 잘린 ZIP이라 수정할 수 없습니다.")
             return False
         return True
 
@@ -1741,8 +1737,8 @@ class Main(QMainWindow):
             return
         message = f"{len(result.recovered):,}개 파일을 복구했습니다."
         if result.skipped:
-            message += f"\n{len(result.skipped):,}개 항목은 손상되었거나 지원하지 않아 건너뛰었습니다."
-            details = "\n".join(f"• {item.name}: {item.reason}" for item in result.skipped[:10])
+            message += f"\n{len(result.skipped):,}개 건너뜀 (손상 또는 미지원)."
+            details = "\n".join(f"• {item.name}" for item in result.skipped[:5])
             if details:
                 message += "\n\n" + details
         QMessageBox.information(self, APP, message)
@@ -1759,9 +1755,9 @@ class Main(QMainWindow):
         if not ok:
             self._report(r)
         elif r:
-            QMessageBox.warning(self, APP, "손상된 항목:\n" + "\n".join(r[:30]))
+            QMessageBox.warning(self, APP, f"손상된 항목 {len(r)}개:\n" + "\n".join(r[:10]) + (f"\n외 {len(r) - 10}개" if len(r) > 10 else ""))
         else:
-            QMessageBox.information(self, APP, "이상 없음: 모든 항목이 정상입니다.")
+            QMessageBox.information(self, APP, "이상 없음.")
 
     def _report(self, r):
         kind, msg = r if r else ("error", "알 수 없는 오류")
@@ -1775,8 +1771,7 @@ class Main(QMainWindow):
 
     def register_shell(self):
         shell_register()
-        QMessageBox.information(self, APP, "등록했습니다. (사용자 계정 범위, 관리자 권한 불필요)\n"
-                                           "Windows 11에서는 우클릭 후 '더 많은 옵션 표시'(Shift+F10)에 나타납니다.")
+        QMessageBox.information(self, APP, "등록했습니다.\nWindows 11: 우클릭 → '더 많은 옵션 표시'(Shift+F10)")
 
     def unregister_shell(self):
         shell_unregister()

@@ -209,8 +209,8 @@ class ViewerEngineTests(unittest.TestCase):
         import viewer_engine as ve
         locked = PermissionError(13, "denied")
         locked.winerror = 32
-        cases = [(PermissionError(13, "denied"), "다른 폴더를 골라"), (locked, "그 프로그램을 닫고"),
-                 (OSError(28, "No space left"), "공간을 비운 뒤"), (ValueError("bad header"), "'오류 검사'"),
+        cases = [(PermissionError(13, "denied"), "다른 폴더를 고르세요"), (locked, "닫고 다시 시도"),
+                 (OSError(28, "No space left"), "공간이 부족"), (ValueError("bad header"), "원본을 다시 받아"),
                  (ve.UserError("파일 삭제는 ZIP 형식에서만 됩니다."), "파일 삭제는 ZIP 형식에서만 됩니다.")]
         for e, advice in cases:
             with self.subTest(e=e):
