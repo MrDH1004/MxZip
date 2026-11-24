@@ -28,22 +28,30 @@ sealed class ViewerForm : Form
     bool sortDesc;
     EngineJob? running;
 
-    readonly FlowLayoutPanel toolbar = new();
-    readonly ToolButton openButton, extractButton, newButton, addButton, deleteButton, testButton, infoButton,
-                        settingsButton;
+    // toolbar: the three main actions as text buttons on the left, the archive's quieter actions as icons after
+    // them, 다크 모드 and 환경설정 as icons at the right end
+    readonly TableLayoutPanel toolbar = new();
+    readonly FlowLayoutPanel toolLeft = new(), toolRight = new();
+    readonly ActionButton openButton, extractButton, newButton;
+    readonly ToolButton addButton, deleteButton, testButton, infoButton, settingsButton;
     readonly ToolToggle flatButton, themeButton;
+    readonly ToolTip tips = new();
     readonly Banner banner;
     readonly Banner updateBanner;
     string updateVersion = "";
-    readonly Panel pathBar = new();
-    readonly Button upButton = new();
-    readonly Label location = new();
+    readonly SummaryCard summary;
+    readonly ToolButton upButton;
+    readonly TextLabel location = new();
     readonly Panel content = new();
+    readonly Panel summaryGap = new();
+    readonly Panel listFrame = new();
     readonly ThemedListView list = new();
+    ImageList? rowHeight;
+    ListViewItem? hoverItem;
     readonly Panel empty = new();
     readonly Panel status = new();
-    readonly Label statusText = new();
-    readonly ProgressBar progress = new();
+    readonly TextLabel statusText = new();
+    readonly ThinProgress progress;
     readonly LinkLabel cancelLink = new();
     readonly ShellIcons icons;
     readonly ContextMenuStrip itemMenu = new();
@@ -55,7 +63,7 @@ sealed class ViewerForm : Form
         Text = "MxZip";
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Dpi;
-        Font = new Font(settings.FontFamily.Length > 0 ? settings.FontFamily : "맑은 고딕", settings.FontSize);
+        Font = new Font(settings.FontFamily.Length > 0 ? settings.FontFamily : Theme.DefaultFamily, settings.FontSize);
         BackColor = theme.Window;
         ForeColor = theme.Text;
         AllowDrop = true;
@@ -63,62 +71,94 @@ sealed class ViewerForm : Form
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!); } catch { }
 
         // toolbar
-        openButton = Tool("열기", Icons.Open, OpenArchiveDialog);
-        extractButton = Tool("풀기", Icons.Extract, ShowExtractMenu, popup: true);
-        newButton = Tool("새로 압축", Icons.NewArchive, NewArchiveDialog);
-        newButton.Emphasis = true;
+        openButton = TextTool("열기", Icons.Open, ButtonKind.Secondary, OpenArchiveDialog, "Ctrl+O");
+        extractButton = TextTool("풀기", Icons.Extract, ButtonKind.Primary, ShowExtractMenu, "Ctrl+E", popup: true);
+        newButton = TextTool("새로 압축", Icons.NewArchive, ButtonKind.Secondary, NewArchiveDialog, "Ctrl+N");
         addButton = Tool("파일 추가", Icons.AddFile, AddFilesDialog);
-        deleteButton = Tool("파일 삭제", Icons.DeleteFile, DeleteSelected);
+        deleteButton = Tool("파일 삭제", Icons.DeleteFile, DeleteSelected, "Delete");
         testButton = Tool("오류 검사", Icons.Test, TestArchive);
         infoButton = Tool("정보", Icons.Info, ShowInfo);
         flatButton = ToggleTool("전체 보기", Icons.FlatList, ToggleFlat);
         themeButton = ToggleTool("다크 모드", Icons.Moon, ToggleTheme);
         themeButton.Checked = theme.Dark;
         settingsButton = Tool("환경설정", Icons.Settings, () => Engine.Forward("--settings"));
+        foreach (var flow in new[] { toolLeft, toolRight })
+        {
+            flow.AutoSize = true;
+            flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            flow.WrapContents = false;
+            flow.Margin = new Padding(0);
+            flow.Padding = new Padding(0);
+        }
+        toolLeft.Anchor = AnchorStyles.Left;
+        toolRight.Anchor = AnchorStyles.Right;
+        toolLeft.Controls.AddRange(new Control[] { openButton, extractButton, newButton, addButton, deleteButton,
+                                                   testButton, infoButton, flatButton });
+        toolRight.Controls.AddRange(new Control[] { themeButton, settingsButton });
         toolbar.Dock = DockStyle.Top;
-        toolbar.BackColor = theme.Toolbar;
-        toolbar.WrapContents = false;
-        toolbar.Padding = new Padding(6, 2, 6, 2);
-        toolbar.Controls.AddRange(new Control[] { openButton, extractButton, newButton, Separator(), addButton,
-                                                  deleteButton, testButton, infoButton, Separator(), flatButton });
-        toolbar.Controls.Add(themeButton);
-        toolbar.Controls.Add(settingsButton);
-        toolbar.Resize += (_, _) => PlaceSettings();
+        toolbar.ColumnCount = 3;
+        toolbar.RowCount = 1;
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        toolbar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        toolbar.Controls.Add(toolLeft, 0, 0);
+        toolbar.Controls.Add(toolRight, 2, 0);
+        toolbar.Paint += (_, e) =>  // a hairline under the toolbar
+        {
+            using var pen = new Pen(theme.Border);
+            e.Graphics.DrawLine(pen, 0, toolbar.Height - 1, toolbar.Width, toolbar.Height - 1);
+        };
 
         banner = new Banner(theme, "ZIP 파일을 열 기본 앱을 MxZip으로 바꾸시겠습니까?", "기본 앱 설정 열기");
-        banner.Action.LinkClicked += (_, _) => BeginInvoke(OpenDefaultApps);
+        banner.Action.Click += (_, _) => BeginInvoke(OpenDefaultApps);
         banner.CloseButton.Click += (_, _) =>
         {
             banner.Visible = false;
             try { AppSettings.BannerDismissed = true; } catch { }
         };
         banner.Visible = false;
+        tips.SetToolTip(banner.CloseButton, "알림 닫기");
 
         // the automatic update check MxZip's old home window made: a notice with 지금 업데이트
         updateBanner = new Banner(theme, "새 버전이 있습니다.", "지금 업데이트");
-        updateBanner.Action.LinkClicked += (_, _) => BeginInvoke(StartUpdate);
+        updateBanner.Action.Click += (_, _) => BeginInvoke(StartUpdate);
         updateBanner.CloseButton.Click += (_, _) => updateBanner.Visible = false;
         updateBanner.Visible = false;
+        tips.SetToolTip(updateBanner.CloseButton, "알림 닫기");
 
-        // path bar: up button and where in the archive the list is
-        pathBar.Dock = DockStyle.Top;
-        pathBar.BackColor = theme.Panel;
-        upButton.FlatStyle = FlatStyle.Flat;
-        upButton.FlatAppearance.BorderSize = 0;
-        upButton.FlatAppearance.MouseOverBackColor = theme.Hover;
-        upButton.AccessibleName = "위로";
-        upButton.Dock = DockStyle.Left;
+        // the archive's summary card; inside it the up button and where in the archive the list is
+        summary = new SummaryCard(theme) { Dock = DockStyle.Top, Visible = false };
+        upButton = new ToolButton(theme, "위로", Icons.Up, box: 28, iconSize: 16);
         upButton.Click += (_, _) => GoUp();
-        location.Dock = DockStyle.Fill;
+        tips.SetToolTip(upButton, "위로 (Backspace)");
+        location.AutoSize = false;
         location.TextAlign = ContentAlignment.MiddleLeft;
-        location.ForeColor = theme.Muted;
         location.AutoEllipsis = true;
-        pathBar.Controls.Add(location);
-        pathBar.Controls.Add(upButton);
-        pathBar.Visible = false;
+        location.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+        summary.Crumbs.Controls.Add(upButton);
+        summary.Crumbs.Controls.Add(location);
+        summary.Crumbs.Resize += (_, _) => PlaceCrumbs();
+        summaryGap.Dock = DockStyle.Top;
+        summaryGap.Visible = false;
 
-        // list
+        // list, framed as a card
         icons = new ShellIcons();
+        listFrame.Dock = DockStyle.Fill;
+        listFrame.Visible = false;
+        listFrame.Paint += (_, e) =>
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            float k = DeviceDpi / 96f;
+            using var path = Typo.RoundRect(new RectangleF(0.5f, 0.5f, listFrame.Width - 1.5f, listFrame.Height - 1.5f), 8 * k);
+            using var fill = new SolidBrush(theme.Card);
+            using var pen = new Pen(theme.Border);
+            g.FillPath(fill, path);
+            g.DrawPath(pen, path);
+        };
+        listFrame.Resize += (_, _) => listFrame.Invalidate();
+        listFrame.Controls.Add(list);
         list.Dock = DockStyle.Fill;
         list.View = View.Details;
         list.FullRowSelect = true;
@@ -142,11 +182,16 @@ sealed class ViewerForm : Form
             list.Invalidate();
         };
         list.LostFocus += (_, _) => list.Invalidate();
+        list.MouseMove += (_, e) => SetHover(list.GetItemAt(e.X, e.Y));
+        list.MouseLeave += (_, _) => SetHover(null);
         list.ItemActivate += (_, _) => OpenItem(list.SelectedItems.Count > 0 ? list.SelectedItems[0] : null);
         list.ColumnClick += (_, e) => Sort(e.Column);
-        list.SelectedIndexChanged += (_, _) => UpdateButtons();
+        list.SelectedIndexChanged += (_, _) =>
+        {
+            UpdateButtons();
+            QueueSelection();
+        };
         list.ContextMenuStrip = itemMenu;
-        list.Visible = false;
         itemMenu.Items.Add("열기", null, (_, _) => OpenItem(list.SelectedItems.Count > 0 ? list.SelectedItems[0] : null));
         itemMenu.Items.Add("선택 항목 풀기...", null, (_, _) => ExtractChosen(SelectedEntries(), choose: true));
         itemMenu.Items.Add("삭제", null, (_, _) => DeleteSelected());
@@ -162,17 +207,26 @@ sealed class ViewerForm : Form
         BuildEmptyPage();
         content.Dock = DockStyle.Fill;
         content.BackColor = theme.Window;
-        content.Controls.Add(list);
+        // docking starts from the back of the z-order (the last added): summary, the gap under it, then the list
+        content.Controls.Add(listFrame);
+        content.Controls.Add(summaryGap);
+        content.Controls.Add(summary);
         content.Controls.Add(empty);
 
         // status bar: message, and while working a progress bar with 취소
         status.Dock = DockStyle.Bottom;
-        status.BackColor = theme.Panel;
+        status.BackColor = theme.Window;
+        status.Paint += (_, e) =>  // a hairline above the status bar
+        {
+            using var pen = new Pen(theme.Border);
+            e.Graphics.DrawLine(pen, 0, 0, status.Width, 0);
+        };
         statusText.Dock = DockStyle.Fill;
+        statusText.AutoSize = false;
         statusText.TextAlign = ContentAlignment.MiddleLeft;
         statusText.ForeColor = theme.Muted;
         statusText.AutoEllipsis = true;
-        progress.Dock = DockStyle.Right;
+        progress = new ThinProgress(theme) { Dock = DockStyle.Right };
         progress.Visible = false;
         cancelLink.Text = "취소";
         cancelLink.Dock = DockStyle.Right;
@@ -184,16 +238,17 @@ sealed class ViewerForm : Form
         status.Controls.Add(progress);
         status.Controls.Add(cancelLink);
 
-        // docking runs from the last added control: toolbar on top, then banner, path bar; status at the bottom
-        // docking starts from the back of the z-order (the last added): status, toolbar, path bar, notice, list
+        // docking starts from the back of the z-order (the last added): status, toolbar, notices, content
         Controls.Add(content);
         Controls.Add(updateBanner);
         Controls.Add(banner);
-        Controls.Add(pathBar);
         Controls.Add(toolbar);
         Controls.Add(status);
 
-        foreach (Control c in new Control[] { this, list, empty, content })
+        foreach (Control c in new Control[] { content, summary, listFrame })
+            c.AllowDrop = true;
+        ApplyColors();
+        foreach (Control c in new Control[] { this, list, empty, content, summary, listFrame })
         {
             c.DragEnter += OnDragEnter;
             c.DragDrop += OnDragDrop;
@@ -202,6 +257,12 @@ sealed class ViewerForm : Form
         DpiChanged += (_, _) => FitToDpi();
         HandleCreated += (_, _) =>
         {
+            // every child gets its window now, in collection order: a hidden control whose window is made later
+            // (when shown) is moved in the collection to its new window's z-order, which reverses toolbar buttons
+            // and the docking order of the content. Only the controls that exist now are covered: one added later
+            // to a toolbar row or the content must get its window before it is hidden.
+            foreach (Control c in Descendants(this).ToList())
+                _ = c.Handle;
             theme.ApplyWindow(this);
             theme.ApplyList(list);
         };
@@ -229,12 +290,25 @@ sealed class ViewerForm : Form
 
     // ----- layout -----
 
-    ToolButton Tool(string label, Icons.Painter painter, Action action, bool popup = false)
+    /// <summary>An icon-only toolbar button; its label is the tooltip and the accessible name.</summary>
+    ToolButton Tool(string label, Icons.Painter painter, Action action, string? keys = null)
     {
         var b = new ToolButton(theme, label, painter);
+        tips.SetToolTip(b, keys != null ? $"{label} ({keys})" : label);
         // a dialog runs after the click returns: opened inside the handler it would hold an accessibility Invoke
-        // (screen readers, UI automation) until it closed. A popup menu is not modal and must open at once: shown
-        // later it closes again as the click finishes.
+        // (screen readers, UI automation) until it closed
+        b.Click += (_, _) => BeginInvoke(action);
+        return b;
+    }
+
+    /// <summary>
+    /// One of the three main toolbar actions as a text button. A popup menu is not modal and must open at once
+    /// (shown later it closes again as the click finishes); a dialog runs after the click returns.
+    /// </summary>
+    ActionButton TextTool(string label, Icons.Painter painter, ButtonKind kind, Action action, string keys, bool popup = false)
+    {
+        var b = new ActionButton(theme, label, kind, painter) { DropDown = popup };
+        tips.SetToolTip(b, $"{label} ({keys})");
         b.Click += (_, _) =>
         {
             if (popup)
@@ -249,64 +323,95 @@ sealed class ViewerForm : Form
     ToolToggle ToggleTool(string label, Icons.Painter painter, Action action)
     {
         var t = new ToolToggle(theme, label, painter);
+        tips.SetToolTip(t, label);
         t.Click += (_, _) => BeginInvoke(action);
         return t;
     }
-
-    Control Separator() => new Panel { Width = 1, BackColor = theme.Border, Margin = new Padding(6, 14, 6, 14) };
 
     void FitToDpi()
     {
         int dpi = DeviceDpi;
         float s = dpi / 96f;
-        foreach (Control c in toolbar.Controls)
+        int gap = (int)(8 * s), group = (int)(16 * s), iconGap = (int)(4 * s);
+        foreach (Control c in Descendants(toolbar))
         {
             if (c is ToolButton tb)
+            {
                 tb.Fit(dpi);
+                tb.Margin = new Padding(0, 0, iconGap, 0);
+            }
             else if (c is ToolToggle tt)
+            {
                 tt.Fit(dpi);
-            else
-                c.Height = (int)(34 * s);
+                tt.Margin = new Padding(0, 0, iconGap, 0);
+            }
+            else if (c is ActionButton ab)
+            {
+                ab.Fit();
+                ab.Margin = new Padding(0, 0, gap, 0);
+            }
         }
-        toolbar.Height = (int)(70 * s);
+        flatButton.Margin = settingsButton.Margin = new Padding(0);
+        // 52 px, taller when a large font makes the buttons taller
+        toolbar.Height = Math.Max((int)(52 * s), openButton.Height + (int)(20 * s));
+        toolbar.Padding = new Padding((int)(16 * s), 0, (int)(12 * s), 1);
         banner.Fit(dpi);
         updateBanner.Fit(dpi);
-        pathBar.Height = (int)(30 * s);
-        upButton.Width = (int)(32 * s);
-        upButton.Image = Icons.Render(Icons.Up, (int)(16 * s), upButton.Enabled ? theme.Text : theme.Disabled, theme.Accent);
-        status.Height = (int)(26 * s);
+        summary.Fit(dpi);
+        upButton.Fit(dpi);
+        summaryGap.Height = (int)(12 * s);
+        content.Padding = new Padding((int)(16 * s), (int)(16 * s), (int)(16 * s), (int)(12 * s));
+        int inset = Math.Max(3, (int)(3 * s));  // keeps the list's square corners inside the frame's rounded ones
+        listFrame.Padding = new Padding(inset);
+        // the row height: a list takes the tallest of its image lists, so an empty state list sets 32 px rows
+        var rows = new ImageList { ImageSize = new Size(1, Math.Max(16, (int)(32 * s))) };
+        list.StateImageList = rows;
+        rowHeight?.Dispose();
+        rowHeight = rows;
+        status.Height = Math.Max((int)(28 * s), Typo.Measure("가", statusText.Font).Height + (int)(8 * s));
         progress.Width = (int)(160 * s);
         cancelLink.Width = (int)(48 * s);
-        statusText.Padding = new Padding((int)(8 * s), 0, 0, 0);
-        location.Padding = new Padding((int)(4 * s), 0, 0, 0);
-        foreach (CardButton card in empty.Controls.OfType<Control>().SelectMany(Descendants).OfType<CardButton>())
-            card.Fit(dpi);
-        emptyPicture.Image = Icons.Render(Icons.ArchiveBox, (int)(64 * s), theme.Muted, theme.Accent);
-        // never narrower than the toolbar: a narrower window would push 전체 보기 / 환경설정 out of sight
-        // (다크 모드's left margin is the stretch gap PlaceSettings adds, not space the buttons need)
-        int toolbarWidth = toolbar.Controls.OfType<Control>()
-                                  .Sum(c => c.Width + (c == themeButton ? 4 : c.Margin.Horizontal)) +
-                           toolbar.Padding.Horizontal + (int)(16 * s);
+        statusText.Padding = new Padding((int)(16 * s), 0, 0, 0);
+        PlaceCrumbs();
+        UpdateButtons();  // which archive buttons show, and the 16 px before the icon group
+        foreach (var b in Descendants(empty).OfType<ActionButton>())
+            b.Fit();
+        emptyPicture.Image?.Dispose();
+        emptyPicture.Image = Icons.StorageBox((int)(112 * s), theme.Muted, theme.Card, theme.Panel, theme.Track,
+                                              theme.Accent, theme.AccentText);
+        // never narrower than the toolbar with every button shown (and the 16 px group gap)
+        int W(Control c) => c.Width + c.Margin.Horizontal;
+        int toolbarWidth = toolLeft.Controls.OfType<Control>().Sum(W) + toolRight.Controls.OfType<Control>().Sum(W) +
+                           toolbar.Padding.Horizontal + group + (int)(24 * s);
         int frame = Width - ClientSize.Width;
-        MinimumSize = new Size(Math.Max((int)(560 * s), toolbarWidth + frame), (int)(380 * s));
-        PlaceSettings();
+        MinimumSize = new Size(Math.Max((int)(560 * s), toolbarWidth + frame), (int)(420 * s));
+    }
+
+    /// <summary>The 위로 button at the left of the summary's bottom row, the folder path after it.</summary>
+    void PlaceCrumbs()
+    {
+        float s = DeviceDpi / 96f;
+        var row = summary.Crumbs;
+        upButton.Location = new Point((int)(8 * s), (row.Height - upButton.Height) / 2);
+        int x = upButton.Right + (int)(6 * s);
+        int h = Typo.Measure("가", location.Font).Height + (int)(4 * s);
+        location.Bounds = new Rectangle(x, (row.Height - h) / 2, Math.Max(0, row.Width - x - (int)(12 * s)), h);
     }
 
     void DrawHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
     {
-        using (var back = new SolidBrush(theme.Panel))
+        using (var back = new SolidBrush(theme.Card))
             e.Graphics.FillRectangle(back, e.Bounds);
         using (var line = new Pen(theme.Border))
-        {
             e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
-            e.Graphics.DrawLine(line, e.Bounds.Right - 1, e.Bounds.Top + 5, e.Bounds.Right - 1, e.Bounds.Bottom - 6);
-        }
-        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
-                    (e.Header?.TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left);
+        bool right = e.Header?.TextAlign == HorizontalAlignment.Right;
         string text = (e.Header?.Text ?? "") + (e.ColumnIndex == sortColumn ? (sortDesc ? "  ▼" : "  ▲") : "");
-        var r = Rectangle.Inflate(e.Bounds, -(int)(8 * DeviceDpi / 96f), 0);
-        TextRenderer.DrawText(e.Graphics, text, list.Font, r, theme.Muted, flags);
+        var r = Rectangle.Inflate(e.Bounds, -(int)(12 * DeviceDpi / 96f), 0);
+        Typo.Draw(e.Graphics, text, list.Font, r, e.ColumnIndex == sortColumn ? theme.Secondary : theme.Muted,
+                  right ? StringAlignment.Far : StringAlignment.Near);
     }
+
+    const string LockMark = "  🔒";
 
     void DrawCell(object? sender, DrawListViewSubItemEventArgs e)
     {
@@ -315,26 +420,37 @@ sealed class ViewerForm : Form
         bool selected = e.Item.Selected;
         var g = e.Graphics;
         var row = e.Bounds;
-        using (var back = new SolidBrush(selected ? theme.Selection : theme.Window))
+        float s = DeviceDpi / 96f;
+        using (var back = new SolidBrush(selected ? theme.Selection : e.Item == hoverItem ? theme.Hover : theme.Card))
             g.FillRectangle(back, row);
-        if (selected && e.ColumnIndex == 0)  // an accent bar marks the selected row
-            using (var bar = new SolidBrush(theme.Accent))
-                g.FillRectangle(bar, row.Left, row.Top, Math.Max(2, (int)(2 * DeviceDpi / 96f)), row.Height);
-        int pad = (int)(6 * DeviceDpi / 96f);
+        int pad = (int)(12 * s);
         var textRect = Rectangle.Inflate(row, -pad, 0);
         if (e.ColumnIndex == 0 && list.SmallImageList != null && e.Item.ImageIndex >= 0)
         {
             var img = list.SmallImageList.Images[e.Item.ImageIndex];
             g.DrawImage(img, row.Left + pad, row.Top + (row.Height - img.Height) / 2, img.Width, img.Height);
-            textRect = new Rectangle(row.Left + pad * 2 + img.Width, row.Top, row.Width - pad * 3 - img.Width, row.Height);
+            int left = row.Left + pad + img.Width + (int)(8 * s);
+            textRect = new Rectangle(left, row.Top, row.Right - left - (int)(8 * s), row.Height);
         }
-        var align = list.Columns[e.ColumnIndex].TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left;
-        var color = e.ColumnIndex == 0 ? theme.Text : theme.Muted;
-        TextRenderer.DrawText(g, e.SubItem.Text, list.Font, textRect, color,
-                              align | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        bool right = list.Columns[e.ColumnIndex].TextAlign == HorizontalAlignment.Right;
+        var color = e.ColumnIndex == 0 ? theme.Text : e.ColumnIndex == 3 ? theme.Muted : theme.Secondary;
+        string text = e.SubItem.Text;
+        // the 🔒 of an encrypted entry is drawn as a line icon (GDI+ has no colour-emoji fallback)
+        bool locked = e.ColumnIndex == 0 && text.EndsWith(LockMark, StringComparison.Ordinal);
+        if (locked)
+        {
+            text = text[..^LockMark.Length];
+            int iconPx = (int)(14 * s);
+            int w = Math.Min(Typo.Measure(text, list.Font).Width, Math.Max(0, textRect.Width - iconPx - (int)(6 * s)));
+            Typo.Draw(g, text, list.Font, new Rectangle(textRect.Left, textRect.Top, w, textRect.Height), color);
+            if (textRect.Width >= iconPx)  // a column too narrow for the name shows no lock either
+                g.DrawImage(LockIcon(iconPx), textRect.Left + w + (int)(6 * s), row.Top + (row.Height - iconPx) / 2, iconPx, iconPx);
+        }
+        else
+            Typo.Draw(g, text, list.Font, textRect, color, right ? StringAlignment.Far : StringAlignment.Near);
         if (list.Focused && e.Item.Focused)  // keyboard position: an accent outline around the whole row
         {
-            int w = Math.Max(1, (int)(DeviceDpi / 96f));
+            int w = Math.Max(1, (int)s);
             using var ring = new SolidBrush(theme.Accent);
             g.FillRectangle(ring, row.Left, row.Top, row.Width, w);
             g.FillRectangle(ring, row.Left, row.Bottom - w, row.Width, w);
@@ -343,6 +459,34 @@ sealed class ViewerForm : Form
             if (e.ColumnIndex == list.Columns.Count - 1)
                 g.FillRectangle(ring, row.Right - w, row.Top, w, row.Height);
         }
+    }
+
+    Bitmap? lockIcon;
+    Color lockColor;
+
+    /// <summary>The lock of encrypted rows, drawn once per size and palette.</summary>
+    Bitmap LockIcon(int px)
+    {
+        if (lockIcon == null || lockIcon.Width != px || lockColor != theme.Muted)
+        {
+            lockIcon?.Dispose();
+            lockIcon = Icons.Render(Icons.Lock, px, theme.Muted, theme.Muted);
+            lockColor = theme.Muted;
+        }
+        return lockIcon;
+    }
+
+    /// <summary>A subtle tile under the row the mouse is over.</summary>
+    void SetHover(ListViewItem? item)
+    {
+        if (item == hoverItem)
+            return;
+        var old = hoverItem;
+        hoverItem = item;
+        if (old != null && old.ListView == list)
+            list.Invalidate(old.Bounds);
+        if (item != null)
+            list.Invalidate(item.Bounds);
     }
 
     /// <summary>The last column takes the rest of the width, so the header has no blank end.</summary>
@@ -356,16 +500,6 @@ sealed class ViewerForm : Form
 
     static IEnumerable<Control> Descendants(Control c) =>
         new[] { c }.Concat(c.Controls.OfType<Control>().SelectMany(Descendants));
-
-    /// <summary>환경설정 sits at the right end of the toolbar.</summary>
-    void PlaceSettings()
-    {
-        // 다크 모드 and 환경설정 sit at the right end: the gap goes before 다크 모드
-        int used = toolbar.Controls.OfType<Control>().Where(c => c != themeButton)
-                          .Sum(c => c.Width + c.Margin.Horizontal) + toolbar.Padding.Horizontal;
-        int gap = toolbar.ClientSize.Width - used - themeButton.Width - 2;
-        themeButton.Margin = new Padding(Math.Max(2, gap), themeButton.Margin.Top, 2, themeButton.Margin.Bottom);
-    }
 
     readonly PictureBox emptyPicture = new() { SizeMode = PictureBoxSizeMode.AutoSize, Anchor = AnchorStyles.None };
 
@@ -382,39 +516,48 @@ sealed class ViewerForm : Form
             Anchor = AnchorStyles.None,
             BackColor = theme.Window,
         };
-        var title = new Label
+        emptyPicture.Margin = new Padding(0, 0, 0, 12);
+        var title = new TextLabel
         {
             Text = "파일을 끌어 놓으세요",
             AutoSize = true,
             Anchor = AnchorStyles.None,
             ForeColor = theme.Text,
             Tag = "text",
-            Font = new Font(Font.FontFamily, Font.Size * 1.35f),
-            Margin = new Padding(0, 14, 0, 6),
+            Font = new Font(Font.FontFamily, Font.Size * 1.5f),
+            Margin = new Padding(0, 0, 0, 6),
         };
-        var sub = new Label
+        var sub = new TextLabel
         {
             Text = "압축 파일은 열고, 일반 파일과 폴더는 새로 압축합니다.",
             AutoSize = true,
             Anchor = AnchorStyles.None,
-            ForeColor = theme.Muted,
-            Tag = "muted",
-            Margin = new Padding(0, 0, 0, 22),
+            ForeColor = theme.Secondary,
+            Tag = "secondary",
+            Margin = new Padding(0, 0, 0, 24),
         };
-        var cards = new FlowLayoutPanel { AutoSize = true, Anchor = AnchorStyles.None, WrapContents = false, BackColor = theme.Window };
-        var openCard = new CardButton(theme, "압축 파일 열기", Icons.Open) { Margin = new Padding(0, 0, 12, 0) };
-        openCard.Click += (_, _) => BeginInvoke(OpenArchiveDialog);
-        var newCard = new CardButton(theme, "새로 압축하기", Icons.NewArchive) { Margin = new Padding(0) };
-        newCard.Click += (_, _) => BeginInvoke(NewArchiveDialog);
-        cards.Controls.Add(openCard);
-        cards.Controls.Add(newCard);
-        foreach (Control c in new Control[] { emptyPicture, title, sub, cards })
+        var buttons = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Anchor = AnchorStyles.None,
+            WrapContents = false,
+            BackColor = theme.Window,
+            Margin = new Padding(0),
+        };
+        var openNow = new ActionButton(theme, "압축 파일 열기", ButtonKind.Primary) { Margin = new Padding(0, 0, 8, 0) };
+        openNow.Click += (_, _) => BeginInvoke(OpenArchiveDialog);
+        var newNow = new ActionButton(theme, "새로 압축하기", ButtonKind.Secondary) { Margin = new Padding(0) };
+        newNow.Click += (_, _) => BeginInvoke(NewArchiveDialog);
+        buttons.Controls.Add(openNow);
+        buttons.Controls.Add(newNow);
+        foreach (Control c in new Control[] { emptyPicture, title, sub, buttons })
             table.Controls.Add(c);
         empty.Controls.Add(table);
-        empty.Resize += (_, _) => table.Location = new Point(Math.Max(0, (empty.Width - table.Width) / 2),
-                                                             Math.Max(0, (empty.Height - table.Height) / 2 - 20));
-        table.SizeChanged += (_, _) => table.Location = new Point(Math.Max(0, (empty.Width - table.Width) / 2),
-                                                                  Math.Max(0, (empty.Height - table.Height) / 2 - 20));
+        void Center() => table.Location = new Point(Math.Max(0, (empty.Width - table.Width) / 2),
+                                                    Math.Max(0, (empty.Height - table.Height) / 2 - (int)(16 * DeviceDpi / 96f)));
+        empty.Resize += (_, _) => Center();
+        table.SizeChanged += (_, _) => Center();
     }
 
     void ShowEmpty()
@@ -424,8 +567,7 @@ sealed class ViewerForm : Form
         entries = new();
         damaged = new();
         Text = "MxZip";
-        list.Visible = false;
-        pathBar.Visible = false;
+        listFrame.Visible = summary.Visible = summaryGap.Visible = false;
         empty.Visible = true;
         statusText.Text = "";
         UpdateButtons();
@@ -437,6 +579,11 @@ sealed class ViewerForm : Form
         bool selected = SelectedEntries().Count > 0;
         openButton.Enabled = running == null;
         newButton.Enabled = running == null;
+        // archive actions are hidden, not greyed, while no archive is open; adding and deleting also on a
+        // read-only archive
+        bool shown = archive != null;
+        extractButton.Visible = testButton.Visible = infoButton.Visible = flatButton.Visible = shown;
+        addButton.Visible = deleteButton.Visible = shown && editable;
         extractButton.Enabled = open && entries.Count > 0;
         addButton.Enabled = open && editable;
         deleteButton.Enabled = open && editable && selected;
@@ -444,13 +591,9 @@ sealed class ViewerForm : Form
         infoButton.Enabled = open;
         flatButton.Enabled = open;
         flatButton.Checked = flat;
-        bool up = !flat && current.Length > 0;
-        if (upButton.Enabled != up || upButton.Image == null)
-        {
-            upButton.Enabled = up;
-            float s = DeviceDpi / 96f;
-            upButton.Image = Icons.Render(Icons.Up, (int)(16 * s), up ? theme.Text : theme.Disabled, theme.Accent);
-        }
+        // the last visible icon has no trailing gap; the main actions keep 16 px before the icons
+        newButton.Margin = new Padding(0, 0, shown ? (int)(16 * DeviceDpi / 96f) : 0, 0);
+        upButton.Enabled = !flat && current.Length > 0;
     }
 
     // ----- loading and showing an archive -----
@@ -458,18 +601,19 @@ sealed class ViewerForm : Form
     async Task LoadArchive(string path, Task<EngineResult> listing)
     {
         archive = path;
+        editable = false;  // until the listing says so: adding stays hidden for a read-only or cancelled archive
         Text = Path.GetFileName(path) + " - MxZip";
         empty.Visible = false;
-        list.Visible = true;
-        pathBar.Visible = true;
+        listFrame.Visible = summary.Visible = summaryGap.Visible = true;
         list.Items.Clear();
         location.Text = Path.GetFileName(path);
+        summary.Show(Path.GetFileName(path), "", "", -1, "", "");
         statusText.Text = "목록을 읽는 중...";
         UpdateButtons();
         var r = await listing;
         while (!r.Ok && r.Error == "password")
         {
-            string? pw = PasswordDialog.Ask(this, Path.GetFileName(path), password != null);
+            string? pw = PasswordDialog.Ask(this, theme, Path.GetFileName(path), password != null);
             if (pw == null)
             {
                 statusText.Text = "암호가 필요합니다.";
@@ -602,9 +746,54 @@ sealed class ViewerForm : Form
     void ShowSummary()
     {
         long files = entries.Count(e => !e.IsDir), total = entries.Where(e => !e.IsDir).Sum(e => e.Size);
-        statusText.Text = $"{format} · 파일 {files:N0}개 · {FormatSize(total)}" + (password != null ? " · 암호 사용" : "") +
-                          (damaged.Count > 0 ? $" · 손상 {damaged.Count:N0}개 제외 · 읽기 전용" :
-                           editable ? "" : " · 읽기 전용");
+        long packed = entries.Where(e => !e.IsDir).Sum(e => e.CSize);
+        var notes = new List<string>();
+        if (password != null)
+            notes.Add("암호 사용");
+        if (damaged.Count > 0)
+            notes.Add($"손상 {damaged.Count:N0}개 제외");
+        if (damaged.Count > 0 || !editable)
+            notes.Add("읽기 전용");
+        string tag = format.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+        summary.Show(Path.GetFileName(archive) ?? "", tag.ToUpperInvariant(),
+                     $"파일 {files:N0}개 · 원본 {FormatSize(total)} · 압축 후 {FormatSize(packed)}",
+                     total > 0 ? (double)packed / total : -1, total > 0 ? $"원본의 {100.0 * packed / total:N1}%" : "",
+                     string.Join(" · ", notes));
+        ShowSelection();
+    }
+
+    /// <summary>
+    /// The status bar while an archive is open and idle: what is selected ("3개 선택 · 1.2 MB"), else nothing (the
+    /// archive's own figures are in the summary card). Progress, results and messages replace it as before.
+    /// </summary>
+    void ShowSelection()
+    {
+        if (archive == null || running != null)
+            return;
+        var chosen = SelectedEntries();
+        if (chosen.Count == 0)
+        {
+            statusText.Text = "";
+            return;
+        }
+        var members = new HashSet<string>(MembersOf(chosen), StringComparer.Ordinal);
+        long size = entries.Where(e => !e.IsDir && members.Contains(e.Name)).Sum(e => e.Size);
+        statusText.Text = $"{chosen.Count:N0}개 선택 · {FormatSize(size)}";
+    }
+
+    bool selectionQueued;
+
+    /// <summary>Selecting many rows fires once per row: the status is worked out once, after them.</summary>
+    void QueueSelection()
+    {
+        if (selectionQueued || !IsHandleCreated)
+            return;
+        selectionQueued = true;
+        BeginInvoke(() =>
+        {
+            selectionQueued = false;
+            ShowSelection();
+        });
     }
 
     internal static string FormatSize(long n) => n < 1024 ? $"{n:N0} B" :
@@ -701,7 +890,7 @@ sealed class ViewerForm : Form
                 return r;
             }
             // ZIPs list their names without a password: it is asked for when the data is needed
-            string? pw = PasswordDialog.Ask(this, Path.GetFileName(archive!), asked || password != null);
+            string? pw = PasswordDialog.Ask(this, theme, Path.GetFileName(archive!), asked || password != null);
             if (pw == null)
                 return null;
             password = pw;
@@ -1123,25 +1312,7 @@ sealed class ViewerForm : Form
     void ApplyTheme()
     {
         SuspendLayout();
-        BackColor = content.BackColor = empty.BackColor = theme.Window;
-        ForeColor = theme.Text;
-        toolbar.BackColor = theme.Toolbar;
-        foreach (Control c in toolbar.Controls)
-            if (c is not ToolButton and not ToolToggle)
-                c.BackColor = theme.Border;  // separators
-        pathBar.BackColor = status.BackColor = theme.Panel;
-        upButton.FlatAppearance.MouseOverBackColor = theme.Hover;
-        location.ForeColor = statusText.ForeColor = theme.Muted;
-        cancelLink.LinkColor = cancelLink.ActiveLinkColor = theme.Accent;
-        banner.ApplyTheme();
-        updateBanner.ApplyTheme();
-        foreach (Control c in Descendants(empty))
-        {
-            if (c is Label label)
-                label.ForeColor = (label.Tag as string) == "muted" ? theme.Muted : theme.Text;
-            else if (c is not CardButton)
-                c.BackColor = theme.Window;
-        }
+        ApplyColors();
         theme.ApplyList(list);
         theme.ApplyWindow(this);
         FitToDpi();  // icons are rendered in the palette's colours
@@ -1149,6 +1320,33 @@ sealed class ViewerForm : Form
         foreach (Control c in Descendants(this))
             c.Invalidate();
         RedrawFrame();
+    }
+
+    /// <summary>The surfaces' colours from the palette (the owner-drawn parts read it as they paint).</summary>
+    void ApplyColors()
+    {
+        BackColor = content.BackColor = empty.BackColor = listFrame.BackColor = summaryGap.BackColor = theme.Window;
+        ForeColor = theme.Text;
+        toolbar.BackColor = toolLeft.BackColor = toolRight.BackColor = theme.Toolbar;
+        status.BackColor = statusText.BackColor = theme.Window;
+        summary.BackColor = theme.Window;
+        location.BackColor = theme.Card;
+        location.ForeColor = theme.Secondary;
+        statusText.ForeColor = theme.Muted;
+        cancelLink.LinkColor = cancelLink.ActiveLinkColor = theme.Accent;
+        summary.ApplyTheme();
+        banner.ApplyTheme();
+        updateBanner.ApplyTheme();
+        foreach (Control c in Descendants(empty))
+        {
+            if (c is Label label)
+            {
+                label.BackColor = theme.Window;
+                label.ForeColor = (label.Tag as string) == "secondary" ? theme.Secondary : theme.Text;
+            }
+            else if (c is not ActionButton)
+                c.BackColor = theme.Window;
+        }
     }
 
     /// <summary>The title bar takes the new dark / light mode only when the frame is redrawn.</summary>
@@ -1175,7 +1373,7 @@ sealed class ViewerForm : Form
     {
         Engine.Forward("--update-now");
         updateBanner.SetMessage($"MxZip {updateVersion} 내려받는 중... 설치가 끝나면 MxZip이 다시 시작됩니다.");
-        updateBanner.Action.Visible = false;
+        updateBanner.HideAction();
     }
 
     // ----- default app notice -----
@@ -1244,6 +1442,10 @@ sealed class ViewerForm : Form
         settingsWatcher?.Dispose();
         settingsDebounce?.Dispose();
         running?.Cancel();
+        tips.Dispose();
+        list.StateImageList = null;
+        rowHeight?.Dispose();
+        lockIcon?.Dispose();
         base.OnFormClosing(e);
     }
 }

@@ -104,16 +104,18 @@ static class Icons
     {
         g.DrawEllipse(pen, 3, 3, 18, 18);
         g.DrawLine(pen, 12, 11, 12, 16.5f);
-        g.FillEllipse(new SolidBrush(pen.Color), 10.9f, 6.7f, 2.2f, 2.2f);
+        using var dot = new SolidBrush(pen.Color);
+        g.FillEllipse(dot, 10.9f, 6.7f, 2.2f, 2.2f);
     }
 
     /// <summary>전체 보기: a flat list.</summary>
     public static void FlatList(Graphics g, Pen pen, Brush accent)
     {
+        using var dot = new SolidBrush(pen.Color);
         foreach (float y in new[] { 6f, 12f, 18f })
         {
             g.DrawLine(pen, 9, y, 21, y);
-            g.FillEllipse(new SolidBrush(pen.Color), 3.6f, y - 1.2f, 2.4f, 2.4f);
+            g.FillEllipse(dot, 3.6f, y - 1.2f, 2.4f, 2.4f);
         }
     }
 
@@ -152,15 +154,51 @@ static class Icons
         g.DrawLines(pen, new PointF[] { new(6.5f, 10.5f), new(12, 5), new(17.5f, 10.5f) });
     }
 
-    /// <summary>The empty-state picture: MxZip's archive box with its zip tab.</summary>
-    public static void ArchiveBox(Graphics g, Pen pen, Brush accent)
+    /// <summary>
+    /// The empty-state picture: a storage box with its lid, a hand hole and a label plate in the accent, on a soft
+    /// floor shadow; drawn on a 100-unit grid at size px.
+    /// </summary>
+    public static Bitmap StorageBox(int size, Color stroke, Color body, Color lid, Color shadow, Color accent, Color accentText)
     {
-        using (var lid = Rounded(2.5f, 4, 19, 5, 1.2f))
-            g.DrawPath(pen, lid);
-        using (var body = Rounded(4, 9, 16, 11.5f, 1.2f))
+        var bmp = new Bitmap(size, size);
+        using var g = Graphics.FromImage(bmp);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.ScaleTransform(size / 100f, size / 100f);
+        using var pen = new Pen(stroke, 2.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        using (var b = new SolidBrush(shadow))
+            g.FillEllipse(b, 12, 83, 76, 9);
+        using (var b = new SolidBrush(body))
+        using (var p = Rounded(16, 37, 68, 49, 3))
+        {
+            g.FillPath(b, p);
+            g.DrawPath(pen, p);
+        }
+        using (var b = new SolidBrush(lid))
+        using (var p = Rounded(11, 23, 78, 16, 3))
+        {
+            g.FillPath(b, p);
+            g.DrawPath(pen, p);
+        }
+        using (var p = Rounded(42, 45, 16, 5.5f, 2.75f))
+            g.DrawPath(pen, p);
+        using (var b = new SolidBrush(accent))
+        using (var p = Rounded(32, 57, 36, 19, 2.5f))
+            g.FillPath(b, p);
+        using var lines = new Pen(Color.FromArgb(210, accentText), 2.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(lines, 38.5f, 63.5f, 61.5f, 63.5f);
+        g.DrawLine(lines, 38.5f, 69.5f, 52, 69.5f);
+        return bmp;
+    }
+
+    /// <summary>An encrypted entry: a padlock.</summary>
+    public static void Lock(Graphics g, Pen pen, Brush accent)
+    {
+        using (var body = Rounded(5, 10.5f, 14, 10.5f, 2))
             g.DrawPath(pen, body);
-        g.FillRectangle(accent, 10, 9, 4, 2.6f);
-        g.DrawLine(pen, 10, 13.5f, 14, 13.5f);
+        g.DrawArc(pen, 8, 4, 8, 9, 180, 180);
+        g.DrawLine(pen, 8, 8.5f, 8, 10.5f);
+        g.DrawLine(pen, 16, 8.5f, 16, 10.5f);
     }
 
     public static void Close(Graphics g, Pen pen, Brush accent)

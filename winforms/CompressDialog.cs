@@ -77,26 +77,32 @@ sealed class CompressDialog : Form
     readonly ShellIcons icons = new();
     readonly CancellationTokenSource sizing = new();
     readonly HashSet<string> added = new(StringComparer.OrdinalIgnoreCase);
+    readonly Font mono;
     string? password;
     bool nameEdited, settingPath;
     int lastFormat;
 
     readonly TableLayoutPanel root = new();
     readonly TableLayoutPanel filesRow = new();
+    readonly Panel listFrame = new();
     readonly ThemedListView list = new();
-    readonly Button addButton = new(), folderButton = new(), removeButton = new();
+    readonly ActionButton addButton, folderButton, removeButton;
     readonly TableLayoutPanel settingsPanel = new();
     readonly TextBox pathBox = new();
-    readonly Button browseButton = new();
+    readonly InputFrame pathFrame;
+    readonly ActionButton browseButton;
     readonly ComboBox formatBox, splitBox, levelBox;
     readonly TextBox customSplit = new();
-    readonly Button passwordButton = new();
-    readonly Label passwordHint = new();
-    readonly Button advancedButton = new();
+    readonly InputFrame customFrame;
+    readonly ActionButton passwordButton;
+    readonly TextLabel passwordHint = new();
+    readonly ActionButton advancedButton;
     readonly TableLayoutPanel advancedPanel = new();
     readonly TextBox excludeBox = new();
-    readonly CheckBox testCheck = new(), deleteCheck = new(), eachCheck = new(), detailsCheck = new();
-    readonly Button startButton = new(), cancelButton = new();
+    readonly InputFrame excludeFrame;
+    readonly ThemedCheck testCheck, deleteCheck, eachCheck, detailsCheck;
+    readonly ActionButton startButton, cancelButton;
+    readonly List<TextLabel> fieldLabels = new();
 
     public CompressRequest? Request { get; private set; }
 
@@ -115,25 +121,20 @@ sealed class CompressDialog : Form
         Font = font;
         AutoScaleMode = AutoScaleMode.Dpi;
         StartPosition = FormStartPosition.CenterParent;
-        FormBorderStyle = FormBorderStyle.Sizable;
+        FormBorderStyle = FormBorderStyle.Sizable;  // resizable for a longer list; a dialog: no maximize / minimize
+        MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
         KeyPreview = true;
         AllowDrop = true;
         float s = DeviceDpi / 96f;
+        mono = FormatTag.MonoFont(Math.Max(7.5f, font.Size * 0.9f));
+        int fieldWidth = (int)(240 * s);
 
         root.Dock = DockStyle.Fill;
         root.ColumnCount = 1;
         root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        root.Padding = new Padding((int)(16 * s), (int)(12 * s), (int)(16 * s), (int)(12 * s));
-
-        var title = new Label
-        {
-            Text = "새 압축",
-            AutoSize = true,
-            Font = new Font(font.FontFamily, font.Size * 1.35f),
-            Margin = new Padding(0, 0, 0, (int)(8 * s)),
-        };
+        root.Padding = new Padding((int)(20 * s), (int)(16 * s), (int)(20 * s), (int)(16 * s));
 
         // ----- 압축할 파일 목록 -----
         filesRow.Dock = DockStyle.Fill;
@@ -143,12 +144,28 @@ sealed class CompressDialog : Form
         filesRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         filesRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         filesRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        listFrame.Dock = DockStyle.Fill;
+        listFrame.Margin = new Padding(0);
+        listFrame.Padding = new Padding(Math.Max(3, (int)(3 * s)));
+        listFrame.Paint += (_, e) =>
+        {
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var path = Typo.RoundRect(new RectangleF(0.5f, 0.5f, listFrame.Width - 1.5f, listFrame.Height - 1.5f), 6 * DeviceDpi / 96f);
+            using var fill = new SolidBrush(theme.Card);
+            using var pen = new Pen(list.Focused ? theme.Accent : theme.Pressed);
+            g.FillPath(fill, path);
+            g.DrawPath(pen, path);
+        };
+        listFrame.Resize += (_, _) => listFrame.Invalidate();
+        listFrame.Controls.Add(list);
         list.Dock = DockStyle.Fill;
         list.View = View.Details;
         list.FullRowSelect = true;
         list.HideSelection = false;
-        list.BorderStyle = BorderStyle.FixedSingle;
+        list.BorderStyle = BorderStyle.None;
         list.SmallImageList = icons.List;
+        list.StateImageList = new ImageList { ImageSize = new Size(1, Math.Max(16, (int)(28 * s))) };  // 28 px rows
         list.AllowDrop = true;
         list.AccessibleName = "압축할 파일 목록";
         list.Columns.Add("이름", (int)(200 * s));
@@ -160,6 +177,8 @@ sealed class CompressDialog : Form
         list.DrawColumnHeader += DrawHeader;
         list.Resize += (_, _) => FitColumns();
         list.SelectedIndexChanged += (_, _) => UpdateState();
+        list.GotFocus += (_, _) => listFrame.Invalidate();
+        list.LostFocus += (_, _) => listFrame.Invalidate();
         list.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Delete)
@@ -173,96 +192,102 @@ sealed class CompressDialog : Form
             FlowDirection = FlowDirection.TopDown,
             AutoSize = true,
             WrapContents = false,
-            Margin = new Padding((int)(8 * s), 0, 0, 0),
+            Margin = new Padding((int)(12 * s), 0, 0, 0),
+            Padding = new Padding(0),
         };
-        SetupButton(addButton, "추가(&A)...", s);
+        addButton = NewButton("추가(&A)...", s);
         addButton.Click += (_, _) => BeginInvoke(AddFiles);
-        SetupButton(folderButton, "폴더 추가(&F)...", s);
+        folderButton = NewButton("폴더 추가(&F)...", s);
         folderButton.Click += (_, _) => BeginInvoke(AddFolders);
-        SetupButton(removeButton, "제거(&D)", s);
+        removeButton = NewButton("제거(&D)", s);
         removeButton.Click += (_, _) => RemoveSelected();
-        fileButtons.Controls.AddRange(new Control[] { addButton, folderButton, removeButton });
-        filesRow.Controls.Add(list, 0, 0);
+        var side = new[] { addButton, folderButton, removeButton };
+        foreach (var b in side)
+            b.Margin = new Padding(0, 0, 0, (int)(8 * s));
+        fileButtons.Controls.AddRange(side);
+        filesRow.Controls.Add(listFrame, 0, 0);
         filesRow.Controls.Add(fileButtons, 1, 0);
 
         // ----- 압축 파일 설정 -----
         settingsPanel.Dock = DockStyle.Top;
         settingsPanel.AutoSize = true;
         settingsPanel.ColumnCount = 3;
-        settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));  // fixed below to the widest label
         settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        settingsPanel.Margin = new Padding(0, (int)(10 * s), 0, 0);
+        settingsPanel.Margin = new Padding(0, (int)(24 * s), 0, 0);
         int row = 0;
         var settingsTitle = Section("압축 파일 설정", s);
         settingsPanel.Controls.Add(settingsTitle, 0, row);
         settingsPanel.SetColumnSpan(settingsTitle, 3);
         row++;
 
-        pathBox.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         pathBox.AccessibleName = "파일 이름";
         pathBox.TextChanged += (_, _) =>
         {
             if (!settingPath)
                 nameEdited = true;
         };
-        SetupButton(browseButton, "...", s);
-        browseButton.AutoSize = false;
-        browseButton.MinimumSize = Size.Empty;
-        browseButton.Padding = new Padding(0);
-        browseButton.Size = new Size((int)(36 * s), pathBox.PreferredHeight + 2);
-        browseButton.Margin = new Padding((int)(4 * s), (int)(3 * s), 0, (int)(3 * s));
+        pathFrame = new InputFrame(theme, pathBox) { Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        pathFrame.Fit(DeviceDpi);
+        browseButton = new ActionButton(theme, "...") { MinWidth = 40 };
+        browseButton.Margin = new Padding((int)(8 * s), (int)(4 * s), 0, (int)(4 * s));
         browseButton.AccessibleName = "저장 위치 찾아보기";
         browseButton.Click += (_, _) => BeginInvoke(Browse);
-        AddRow(ref row, "파일 이름", pathBox, s, browseButton);
+        AddRow(ref row, "파일 이름", pathFrame, s, browseButton);
 
         formatBox = Combo(s);
         formatBox.AccessibleName = "압축 형식";
-        formatBox.Width = (int)(220 * s);
+        formatBox.Width = fieldWidth;
         foreach (var f in ArchiveFormat.All)
             formatBox.Items.Add(f);
         AddRow(ref row, "압축 형식", formatBox, s);
 
-        var passwordRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-        SetupButton(passwordButton, "암호 설정(&P)...", s);
+        var passwordRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0) };
+        passwordButton = NewButton("암호 설정(&P)...", s);
         passwordButton.Click += (_, _) => BeginInvoke(SetPassword);
         passwordHint.AutoSize = true;
         passwordHint.Anchor = AnchorStyles.Left;
-        passwordHint.Margin = new Padding((int)(8 * s), (int)(7 * s), 0, 0);
+        passwordHint.Margin = new Padding((int)(12 * s), 0, 0, 0);
         passwordRow.Controls.Add(passwordButton);
         passwordRow.Controls.Add(passwordHint);
+        passwordRow.Layout += (_, _) =>  // the hint centred on the button
+            passwordHint.Top = Math.Max(0, (passwordButton.Height - passwordHint.Height) / 2);
         AddRow(ref row, "암호", passwordRow, s);
 
-        var splitRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+        var splitRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0) };
         splitBox = Combo(s);
         splitBox.AccessibleName = "분할 압축";
-        splitBox.Width = (int)(220 * s);
+        splitBox.Width = fieldWidth;
         splitBox.MaxDropDownItems = 12;
+        splitBox.Margin = new Padding(0);
         foreach (var c in SplitChoices)
             splitBox.Items.Add(c);
-        customSplit.Width = (int)(110 * s);
         customSplit.AccessibleName = "분할 크기 직접 입력 (예: 123MB, 1.5GB, 1440KB)";
         customSplit.PlaceholderText = "예: 123MB";
-        customSplit.Margin = new Padding((int)(8 * s), 3, 0, 3);
+        customFrame = new InputFrame(theme, customSplit) { Width = (int)(120 * s), Margin = new Padding((int)(8 * s), 0, 0, 0) };
+        customFrame.Fit(DeviceDpi);
         splitBox.SelectedIndexChanged += (_, _) =>
         {
             bool custom = splitBox.SelectedItem is SplitChoice { Bytes: Custom };
-            customSplit.Visible = custom;
+            customFrame.Visible = custom;
             if (custom && Visible)
                 customSplit.Focus();
         };
         splitRow.Controls.Add(splitBox);
-        splitRow.Controls.Add(customSplit);
+        splitRow.Controls.Add(customFrame);
         AddRow(ref row, "분할 압축", splitRow, s);
 
         levelBox = Combo(s);
         levelBox.AccessibleName = "압축 방법";
-        levelBox.Width = (int)(220 * s);
+        levelBox.Width = fieldWidth;
         foreach (var l in LevelChoices)
             levelBox.Items.Add(l);
         AddRow(ref row, "압축 방법", levelBox, s);
 
-        SetupButton(advancedButton, "고급 압축 설정 »", s);
+        advancedButton = new ActionButton(theme, "고급 압축 설정 »", ButtonKind.Link);
+        advancedButton.Margin = new Padding(0, (int)(4 * s), 0, 0);
+        advancedButton.Anchor = AnchorStyles.Left;
         advancedButton.Click += (_, _) => ToggleAdvanced();
         settingsPanel.Controls.Add(advancedButton, 1, row++);
 
@@ -273,16 +298,18 @@ sealed class CompressDialog : Form
         advancedPanel.Dock = DockStyle.Fill;
         advancedPanel.Margin = new Padding(0);
         excludeBox.Text = DefaultExclude;
-        excludeBox.Anchor = AnchorStyles.Left | AnchorStyles.Right;
         excludeBox.AccessibleName = "제외할 이름 끝 (쉼표로 구분)";
+        excludeFrame = new InputFrame(theme, excludeBox) { Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        excludeFrame.Fit(DeviceDpi);
+        excludeFrame.Margin = new Padding(0, (int)(4 * s), 0, (int)(4 * s));
         advancedPanel.Controls.Add(FieldLabel("제외할 이름 끝", s), 0, 0);
-        advancedPanel.Controls.Add(excludeBox, 1, 0);
-        var excludeHint = new Label
+        advancedPanel.Controls.Add(excludeFrame, 1, 0);
+        var excludeHint = new TextLabel
         {
             Text = "이 이름으로 끝나는 파일은 넣지 않습니다. 쉼표로 구분합니다.",
             AutoSize = true,
             Tag = "muted",
-            Margin = new Padding(3, 0, 3, 3),
+            Margin = new Padding(0, 0, 0, (int)(4 * s)),
         };
         advancedPanel.Controls.Add(excludeHint, 1, 1);
         advancedPanel.Visible = false;
@@ -295,11 +322,12 @@ sealed class CompressDialog : Form
             AutoSize = true,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            Margin = new Padding(0, (int)(4 * s), 0, 0),
+            Margin = new Padding(0, (int)(8 * s), 0, 0),
+            Padding = new Padding(0),
         };
-        SetupCheck(testCheck, "압축 후 테스트(&T)");
-        SetupCheck(deleteCheck, "압축 후 원본 파일 삭제(&E)");
-        SetupCheck(eachCheck, "각각 파일명/폴더명으로 압축하기");
+        testCheck = NewCheck("압축 후 테스트(&T)");
+        deleteCheck = NewCheck("압축 후 원본 파일 삭제(&E)");
+        eachCheck = NewCheck("각각 파일명/폴더명으로 압축하기");
         eachCheck.CheckedChanged += (_, _) => UpdateState();
         checks.Controls.AddRange(new Control[] { testCheck, deleteCheck, eachCheck });
         settingsPanel.Controls.Add(checks, 1, row++);
@@ -310,36 +338,34 @@ sealed class CompressDialog : Form
             Dock = DockStyle.Fill,
             AutoSize = true,
             ColumnCount = 2,
-            Margin = new Padding(0, (int)(12 * s), 0, 0),
+            Margin = new Padding(0, (int)(24 * s), 0, 0),
         };
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         bottom.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        SetupCheck(detailsCheck, "상세 설정 보기");
+        detailsCheck = NewCheck("상세 설정 보기");
         detailsCheck.Checked = true;
         detailsCheck.Anchor = AnchorStyles.Left;
         detailsCheck.CheckedChanged += (_, _) => ShowPanel(settingsPanel, detailsCheck.Checked);
-        var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-        SetupButton(startButton, "압축 시작", s);
-        startButton.Tag = "primary";
+        var actions = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0) };
+        startButton = new ActionButton(theme, "압축 시작", ButtonKind.Primary) { MinWidth = 96 };
+        startButton.Margin = new Padding(0, 0, (int)(8 * s), 0);
         startButton.Click += (_, _) => Start();
-        SetupButton(cancelButton, "취소", s);
+        cancelButton = new ActionButton(theme, "취소") { MinWidth = 80 };
         cancelButton.DialogResult = DialogResult.Cancel;
         actions.Controls.Add(startButton);
         actions.Controls.Add(cancelButton);
         bottom.Controls.Add(detailsCheck, 0, 0);
         bottom.Controls.Add(actions, 1, 0);
 
-        root.RowCount = 5;
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowCount = 4;
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.Controls.Add(title, 0, 0);
-        root.Controls.Add(Section("압축할 파일 목록", s), 0, 1);
-        root.Controls.Add(filesRow, 0, 2);
-        root.Controls.Add(settingsPanel, 0, 3);
-        root.Controls.Add(bottom, 0, 4);
+        root.Controls.Add(Section("압축할 파일 목록", s), 0, 0);
+        root.Controls.Add(filesRow, 0, 1);
+        root.Controls.Add(settingsPanel, 0, 2);
+        root.Controls.Add(bottom, 0, 3);
         Controls.Add(root);
         AcceptButton = startButton;
         CancelButton = cancelButton;
@@ -367,62 +393,62 @@ sealed class CompressDialog : Form
         SetPath(AutoPath());
 
         DialogStyle.Apply(theme, this);
-        startButton.EnabledChanged += (_, _) => DialogStyle.Apply(theme, startButton);
         HandleCreated += (_, _) =>
         {
+            // windows for the hidden rows too, in order (made later, a shown control moves to the front of its row)
+            foreach (Control c in Descendants(this).ToList())
+                _ = c.Handle;
             theme.ApplyWindow(this);
             theme.ApplyList(list);
         };
-        Load += (_, _) => FitHeight();
+        Load += (_, _) =>
+        {
+            FitWidths();
+            FitHeight();
+        };
         FormClosed += (_, _) => sizing.Cancel();
         FormatChanged();
     }
 
     // ----- layout helpers -----
 
-    static Label Section(string text, float s) => new()
+    static IEnumerable<Control> Descendants(Control c) =>
+        new[] { c }.Concat(c.Controls.OfType<Control>().SelectMany(Descendants));
+
+    static TextLabel Section(string text, float s) => new()
     {
         Text = text,
         AutoSize = true,
-        Margin = new Padding(0, 0, 0, (int)(6 * s)),
+        Margin = new Padding(0, 0, 0, (int)(8 * s)),
         Tag = "section",
     };
 
-    static Label FieldLabel(string text, float s) => new()
+    TextLabel FieldLabel(string text, float s)
     {
-        Text = text,
-        AutoSize = true,
-        Anchor = AnchorStyles.Left,
-        Margin = new Padding(0, (int)(4 * s), (int)(12 * s), (int)(4 * s)),
-    };
+        var l = new TextLabel
+        {
+            Text = text,
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, (int)(4 * s), (int)(16 * s), (int)(4 * s)),
+        };
+        fieldLabels.Add(l);
+        return l;
+    }
 
     void AddRow(ref int row, string label, Control field, float s, Control? extra = null)
     {
         settingsPanel.Controls.Add(FieldLabel(label, s), 0, row);
-        field.Margin = new Padding(field.Margin.Left, (int)(3 * s), field.Margin.Right, (int)(3 * s));
+        field.Margin = new Padding(0, (int)(4 * s), 0, (int)(4 * s));  // every field starts on the same line
         settingsPanel.Controls.Add(field, 1, row);
         if (extra != null)
             settingsPanel.Controls.Add(extra, 2, row);
         row++;
     }
 
-    static void SetupButton(Button b, string text, float s)
-    {
-        b.Text = text;
-        b.AutoSize = true;
-        b.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        b.MinimumSize = new Size((int)(88 * s), 0);
-        b.Padding = new Padding((int)(8 * s), (int)(2 * s), (int)(8 * s), (int)(2 * s));
-        b.Margin = new Padding(0, 0, (int)(6 * s), (int)(6 * s));
-        b.AccessibleName = text.Replace("&", "", StringComparison.Ordinal).Replace("...", "", StringComparison.Ordinal);
-    }
+    ActionButton NewButton(string text, float s) => new(theme, text) { Margin = new Padding(0, 0, (int)(8 * s), 0) };
 
-    static void SetupCheck(CheckBox c, string text)
-    {
-        c.Text = text;
-        c.AutoSize = true;
-        c.AccessibleName = text.Replace("&", "", StringComparison.Ordinal);
-    }
+    ThemedCheck NewCheck(string text) => new(theme, text) { Margin = new Padding(0) };
 
     ComboBox Combo(float s)
     {
@@ -430,43 +456,58 @@ sealed class CompressDialog : Form
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
             DrawMode = DrawMode.OwnerDrawFixed,
-            ItemHeight = (int)(Font.Height + 6 * s),
+            ItemHeight = Math.Max(Font.Height + 4, (int)(32 * s) - 6),  // 32 px tall like the buttons and fields
         };
         c.DrawItem += DrawComboItem;
         return c;
     }
 
-    /// <summary>Combo rows in the theme's colours; a format that needs exactly one file is greyed out otherwise.</summary>
+    /// <summary>
+    /// Combo rows in the theme's colours. Formats show their tag, the rest of their label and the extension; a
+    /// format that needs exactly one file is greyed out otherwise.
+    /// </summary>
     void DrawComboItem(object? sender, DrawItemEventArgs e)
     {
         if (sender is not ComboBox c)
             return;
         bool edit = (e.State & DrawItemState.ComboBoxEdit) != 0;
         bool selected = (e.State & DrawItemState.Selected) != 0 && !edit;
-        using (var back = new SolidBrush(selected ? theme.Selection : theme.Panel))
+        using (var back = new SolidBrush(selected ? theme.Selection : theme.Card))
             e.Graphics.FillRectangle(back, e.Bounds);
         if (e.Index < 0)
             return;
-        bool enabled = c.Enabled && !(c.Items[e.Index] is ArchiveFormat f && !Allowed(f));
-        var r = Rectangle.Inflate(e.Bounds, -(int)(4 * DeviceDpi / 96f), 0);
-        TextRenderer.DrawText(e.Graphics, c.GetItemText(c.Items[e.Index]), c.Font, r, enabled ? theme.Text : theme.Disabled,
-                              TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis |
-                              TextFormatFlags.NoPrefix);
+        float s = DeviceDpi / 96f;
+        var item = c.Items[e.Index];
+        bool enabled = c.Enabled && !(item is ArchiveFormat f0 && !Allowed(f0));
+        var r = Rectangle.Inflate(e.Bounds, -(int)(6 * s), 0);
+        if (item is ArchiveFormat f)
+        {
+            string label = f.Label;
+            int space = label.IndexOf(' ', StringComparison.Ordinal);
+            string tag = space < 0 ? label : label[..space];
+            string rest = space < 0 ? "" : label[(space + 1)..].Trim('(', ')', ' ');
+            var size = FormatTag.Measure(tag, mono, DeviceDpi);
+            FormatTag.Paint(e.Graphics, tag, mono, theme, r.Left, r.Top + (r.Height - size.Height) / 2, DeviceDpi, selected, enabled);
+            int x = r.Left + size.Width + (int)(8 * s);
+            int extW = Typo.Measure(f.Ext, c.Font).Width;
+            Typo.Draw(e.Graphics, f.Ext, c.Font, new Rectangle(r.Right - extW, r.Top, extW, r.Height), enabled ? theme.Muted : theme.Disabled);
+            if (rest.Length > 0)
+                Typo.Draw(e.Graphics, rest, c.Font, new Rectangle(x, r.Top, Math.Max(0, r.Right - extW - x - (int)(8 * s)), r.Height),
+                          enabled ? theme.Secondary : theme.Disabled);
+            return;
+        }
+        Typo.Draw(e.Graphics, c.GetItemText(item) ?? "", c.Font, r, enabled ? theme.Text : theme.Disabled);
     }
 
     void DrawHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
     {
-        using (var back = new SolidBrush(theme.Panel))
+        using (var back = new SolidBrush(theme.Card))
             e.Graphics.FillRectangle(back, e.Bounds);
         using (var line = new Pen(theme.Border))
-        {
             e.Graphics.DrawLine(line, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
-            e.Graphics.DrawLine(line, e.Bounds.Right - 1, e.Bounds.Top + 5, e.Bounds.Right - 1, e.Bounds.Bottom - 6);
-        }
-        var flags = TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
-                    (e.Header?.TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left);
-        var r = Rectangle.Inflate(e.Bounds, -(int)(8 * DeviceDpi / 96f), 0);
-        TextRenderer.DrawText(e.Graphics, e.Header?.Text ?? "", list.Font, r, theme.Muted, flags);
+        bool right = e.Header?.TextAlign == HorizontalAlignment.Right;
+        var r = Rectangle.Inflate(e.Bounds, -(int)(10 * DeviceDpi / 96f), 0);
+        Typo.Draw(e.Graphics, e.Header?.Text ?? "", list.Font, r, theme.Muted, right ? StringAlignment.Far : StringAlignment.Near);
     }
 
     void DrawCell(object? sender, DrawListViewSubItemEventArgs e)
@@ -475,24 +516,45 @@ sealed class CompressDialog : Form
             return;
         var g = e.Graphics;
         var row = e.Bounds;
-        using (var back = new SolidBrush(e.Item.Selected ? theme.Selection : theme.Window))
+        float s = DeviceDpi / 96f;
+        using (var back = new SolidBrush(e.Item.Selected ? theme.Selection : theme.Card))
             g.FillRectangle(back, row);
-        int pad = (int)(6 * DeviceDpi / 96f);
+        int pad = (int)(10 * s);
         var textRect = Rectangle.Inflate(row, -pad, 0);
         if (e.ColumnIndex == 0 && list.SmallImageList != null && e.Item.ImageIndex >= 0)
         {
             var img = list.SmallImageList.Images[e.Item.ImageIndex];
             g.DrawImage(img, row.Left + pad, row.Top + (row.Height - img.Height) / 2, img.Width, img.Height);
-            textRect = new Rectangle(row.Left + pad * 2 + img.Width, row.Top, row.Width - pad * 3 - img.Width, row.Height);
+            int left = row.Left + pad + img.Width + (int)(8 * s);
+            textRect = new Rectangle(left, row.Top, row.Right - left - (int)(6 * s), row.Height);
         }
-        var align = list.Columns[e.ColumnIndex].TextAlign == HorizontalAlignment.Right ? TextFormatFlags.Right : TextFormatFlags.Left;
-        TextRenderer.DrawText(g, e.SubItem.Text, list.Font, textRect, e.ColumnIndex == 0 ? theme.Text : theme.Muted,
-                              align | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix |
-                              (e.ColumnIndex == 2 ? TextFormatFlags.PathEllipsis : 0));
+        bool right = list.Columns[e.ColumnIndex].TextAlign == HorizontalAlignment.Right;
+        string text = e.SubItem.Text;
+        if (e.ColumnIndex == 2)  // a long folder: its start and end stay readable
+            text = TrimPath(text, list.Font, textRect.Width);
+        Typo.Draw(g, text, list.Font, textRect, e.ColumnIndex == 0 ? theme.Text : e.ColumnIndex == 2 ? theme.Muted : theme.Secondary,
+                  right ? StringAlignment.Far : StringAlignment.Near);
         if (list.Focused && e.Item.Focused)  // keyboard position: an accent line under the row
             using (var ring = new SolidBrush(theme.Accent))
-                g.FillRectangle(ring, row.Left, row.Bottom - Math.Max(1, (int)(DeviceDpi / 96f)), row.Width,
-                                Math.Max(1, (int)(DeviceDpi / 96f)));
+                g.FillRectangle(ring, row.Left, row.Bottom - Math.Max(1, (int)s), row.Width, Math.Max(1, (int)s));
+    }
+
+    /// <summary>C:\a\b\c\d -> C:\a\…\d when it does not fit (as TextRenderer's path ellipsis).</summary>
+    string TrimPath(string path, Font font, int width)
+    {
+        if (width <= 0 || Typo.Measure(path, font).Width <= width)
+            return path;
+        var parts = path.Split(Path.DirectorySeparatorChar);
+        if (parts.Length < 3)
+            return path;
+        for (int keep = parts.Length - 2; keep >= 1; keep--)
+        {
+            string t = string.Join(Path.DirectorySeparatorChar, parts.Take(keep)) + Path.DirectorySeparatorChar + "…" +
+                       Path.DirectorySeparatorChar + parts[^1];
+            if (Typo.Measure(t, font).Width <= width)
+                return t;
+        }
+        return parts[0] + Path.DirectorySeparatorChar + "…" + Path.DirectorySeparatorChar + parts[^1];
     }
 
     /// <summary>The path column takes the rest of the width.</summary>
@@ -500,6 +562,28 @@ sealed class CompressDialog : Form
     {
         int others = list.Columns[0].Width + list.Columns[1].Width;
         list.Columns[2].Width = Math.Max((int)(120 * DeviceDpi / 96f), list.ClientSize.Width - others);
+    }
+
+    /// <summary>
+    /// Widths that depend on the text: measured once every control is in the window and has the window's font
+    /// (환경설정's font size), not the default font it had when it was made.
+    /// </summary>
+    void FitWidths()
+    {
+        float s = DeviceDpi / 96f;
+        // one width for the column of buttons
+        var side = new[] { addButton, folderButton, removeButton };
+        foreach (var b in side)
+            b.MinWidth = 0;
+        int sideWidth = side.Max(b => b.GetPreferredSize(Size.Empty).Width);
+        foreach (var b in side)
+            b.MinWidth = (int)Math.Ceiling(sideWidth / s);
+        // one label column for the settings and the advanced rows, as wide as the widest label
+        int labelWidth = fieldLabels.Max(l => l.PreferredSize.Width + l.Margin.Horizontal);
+        settingsPanel.ColumnStyles[0] = new ColumnStyle(SizeType.Absolute, labelWidth);
+        advancedPanel.ColumnStyles[0] = new ColumnStyle(SizeType.Absolute, labelWidth);
+        // the size column fits its header at any font size
+        list.Columns[1].Width = Math.Max((int)(90 * s), Typo.Measure(list.Columns[1].Text, list.Font).Width + (int)(28 * s));
     }
 
     /// <summary>A height that shows the settings and about seven list rows.</summary>
@@ -864,7 +948,7 @@ sealed class CompressDialog : Form
             splitBox.SelectedIndex = SplitChoices.Length - 1;
             customSplit.Text = saved;
         }
-        customSplit.Visible = splitBox.SelectedItem is SplitChoice { Bytes: Custom };
+        customFrame.Visible = splitBox.SelectedItem is SplitChoice { Bytes: Custom };
     }
 
     // ----- 압축 시작 -----
@@ -965,12 +1049,14 @@ sealed class CompressDialog : Form
             sizing.Cancel();
             sizing.Dispose();
             icons.List.Dispose();
+            list.StateImageList?.Dispose();
+            mono.Dispose();
         }
         base.Dispose(disposing);
     }
 }
 
-/// <summary>The viewer's dark / light palette on standard dialog controls (the 새 압축 and 암호 설정 windows).</summary>
+/// <summary>The viewer's dark / light palette on the dialog controls (the 새 압축, 암호 입력 and 암호 설정 windows).</summary>
 static class DialogStyle
 {
     [System.Runtime.InteropServices.DllImport("uxtheme.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
@@ -989,13 +1075,20 @@ static class DialogStyle
         {
             case ListView:
                 break;  // ThemedListView: Theme.ApplyList and owner drawing
+            case ActionButton or ThemedCheck:
+                c.BackColor = c.Parent?.BackColor ?? t.Window;  // they paint themselves from the palette
+                break;
+            case InputFrame frame:
+                frame.ApplyTheme();
+                break;
             case TextBox tb:
-                tb.BackColor = t.Panel;
+                tb.BackColor = t.Card;
                 tb.ForeColor = t.Text;
-                tb.BorderStyle = BorderStyle.FixedSingle;
+                if (tb.Parent is not InputFrame)
+                    tb.BorderStyle = BorderStyle.FixedSingle;
                 break;
             case ComboBox cb:
-                cb.BackColor = t.Panel;
+                cb.BackColor = t.Card;
                 cb.ForeColor = t.Text;
                 // Windows' dark combo style (no light frame); rows are owner drawn in the palette
                 if (cb.IsHandleCreated)
@@ -1003,28 +1096,10 @@ static class DialogStyle
                 else
                     cb.HandleCreated += (_, _) => SetWindowTheme(cb.Handle, t.Dark ? "DarkMode_CFD" : "Explorer", null);
                 break;
-            case Button b:
-                bool primary = b.Tag as string == "primary" && b.Enabled;
-                b.FlatStyle = FlatStyle.Flat;
-                b.UseVisualStyleBackColor = false;
-                b.BackColor = primary ? t.Accent : t.Panel;
-                b.ForeColor = primary ? t.AccentText : t.Text;
-                b.FlatAppearance.BorderColor = primary ? t.Accent : t.Border;
-                b.FlatAppearance.MouseOverBackColor = primary ? ControlPaint.Dark(t.Accent, 0.05f) : t.Hover;
-                b.FlatAppearance.MouseDownBackColor = primary ? ControlPaint.Dark(t.Accent, 0.15f) : t.Pressed;
-                break;
-            case CheckBox cb:
-                cb.BackColor = t.Window;
-                cb.ForeColor = t.Text;
-                cb.FlatStyle = FlatStyle.Flat;
-                cb.FlatAppearance.BorderColor = t.Muted;
-                cb.FlatAppearance.CheckedBackColor = t.Window;
-                break;
             case Label l:
                 l.BackColor = t.Window;
-                l.ForeColor = (l.Tag as string) switch { "muted" => t.Muted, "accent" => t.Accent, _ => t.Text };
-                if (l.Tag as string == "section" && !l.Font.Bold)
-                    l.Font = new Font(l.Font, FontStyle.Bold);
+                // section labels: small and muted; hints muted; a set password in the accent
+                l.ForeColor = (l.Tag as string) switch { "muted" or "section" => t.Muted, "accent" => t.Accent, _ => t.Text };
                 break;
             default:
                 c.BackColor = t.Window;
