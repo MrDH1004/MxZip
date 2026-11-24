@@ -34,7 +34,7 @@ sealed class Theme
         {
             Window = Hex("#141415"); Card = Hex("#19191b"); Panel = Hex("#232325"); Toolbar = Card;
             Hover = Hex("#262628"); Pressed = Hex("#303033"); Border = Hex("#2c2c2f");
-            Text = Hex("#ededed"); Secondary = Hex("#a1a1a6"); Muted = Hex("#85858b"); Disabled = Hex("#5c5c62");
+            Text = Hex("#ededed"); Secondary = Hex("#bdbdc2"); Muted = Hex("#9c9ca2"); Disabled = Hex("#5c5c62");
             Accent = Hex("#7c9cf5"); AccentText = Hex("#0f0f10"); AccentHover = Hex("#93aef7"); AccentPressed = Hex("#6a8ae6");
             Selection = Hex("#2b3245"); Track = Hex("#2e2e32");
         }
@@ -42,7 +42,7 @@ sealed class Theme
         {
             Window = Hex("#fafafa"); Card = Hex("#ffffff"); Panel = Hex("#f4f4f5"); Toolbar = Card;
             Hover = Hex("#f0f0f1"); Pressed = Hex("#e4e4e7"); Border = Hex("#e6e6e6");
-            Text = Hex("#171717"); Secondary = Hex("#525252"); Muted = Hex("#737373"); Disabled = Hex("#a3a3a3");
+            Text = Hex("#171717"); Secondary = Hex("#3f3f46"); Muted = Hex("#5f5f66"); Disabled = Hex("#a3a3a3");
             Accent = Hex("#2f5bd3"); AccentText = Hex("#ffffff"); AccentHover = Hex("#284fbb"); AccentPressed = Hex("#2244a3");
             Selection = Hex("#e6ebfa"); Track = Hex("#e8e8ea");
         }

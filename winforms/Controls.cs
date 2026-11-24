@@ -4,41 +4,26 @@ using System.Drawing.Text;
 namespace MxZip.Viewer;
 
 /// <summary>
-/// Text drawn by the viewer's own controls. GDI+ with grey-scale anti-aliasing and typographic (unhinted) advances:
-/// hinted GDI / grid-fitted layout of 맑은 고딕 at UI sizes spreads Hangul syllables apart ("파 일 을") and
-/// ClearType tints thin strokes; this keeps the font's own spacing and one colour per string.
+/// Text drawn by the viewer's own controls: GDI (TextRenderer) with the system's ClearType and hinting, as native
+/// Windows controls draw, so owner-drawn text is as sharp and dark as the TextBoxes next to it. NoPadding keeps the
+/// font's own spacing (GDI+ grey-scale anti-aliasing looked blurred at UI sizes).
 /// </summary>
 static class Typo
 {
-    static StringFormat Format(StringAlignment h, StringAlignment v, bool wrap, HotkeyPrefix prefix)
-    {
-        var f = (StringFormat)StringFormat.GenericTypographic.Clone();
-        f.Alignment = h;
-        f.LineAlignment = v;
-        f.HotkeyPrefix = prefix;
-        f.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces;
-        if (wrap)
-            f.Trimming = StringTrimming.EllipsisWord;
-        else
-        {
-            f.FormatFlags |= StringFormatFlags.NoWrap;
-            f.Trimming = StringTrimming.EllipsisCharacter;
-        }
-        return f;
-    }
+    static TextFormatFlags Flags(StringAlignment h, StringAlignment v, bool wrap, HotkeyPrefix prefix) =>
+        TextFormatFlags.NoPadding |
+        prefix switch { HotkeyPrefix.None => TextFormatFlags.NoPrefix, HotkeyPrefix.Hide => TextFormatFlags.HidePrefix, _ => 0 } |
+        (wrap ? TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis : TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis) |
+        h switch { StringAlignment.Center => TextFormatFlags.HorizontalCenter, StringAlignment.Far => TextFormatFlags.Right, _ => 0 } |
+        v switch { StringAlignment.Center => TextFormatFlags.VerticalCenter, StringAlignment.Far => TextFormatFlags.Bottom, _ => 0 };
 
     public static void Draw(Graphics g, string text, Font font, RectangleF r, Color color,
                             StringAlignment h = StringAlignment.Near, StringAlignment v = StringAlignment.Center,
                             bool wrap = false, HotkeyPrefix prefix = HotkeyPrefix.None)
     {
-        if (r.Width <= 0 || r.Height <= 0 || text.Length == 0)  // GDI+ draws an empty rectangle unclipped
+        if (r.Width <= 0 || r.Height <= 0 || text.Length == 0)
             return;
-        var hint = g.TextRenderingHint;
-        g.TextRenderingHint = TextRenderingHint.AntiAlias;
-        using var f = Format(h, v, wrap, prefix);
-        using var b = new SolidBrush(color);
-        g.DrawString(text, font, b, r, f);
-        g.TextRenderingHint = hint;
+        TextRenderer.DrawText(g, text, font, Rectangle.Round(r), color, Flags(h, v, wrap, prefix));
     }
 
     /// <summary>
@@ -47,27 +32,10 @@ static class Typo
     /// </summary>
     public static Size Measure(string text, Font font, int maxWidth = 0, HotkeyPrefix prefix = HotkeyPrefix.None)
     {
-        var g = MeasureGraphics;
-        using var f = Format(StringAlignment.Near, StringAlignment.Near, maxWidth > 0, prefix);
-        SizeF size = maxWidth > 0 ? g.MeasureString(text, font, maxWidth, f) : g.MeasureString(text, font, PointF.Empty, f);
-        float height = Math.Max(size.Height, font.GetHeight(g));
-        return new Size((int)Math.Ceiling(size.Width) + 1, (int)Math.Ceiling(height));
-    }
-
-    // one screen Graphics for measuring, kept for the process's lifetime (measuring runs on the UI thread only)
-    static Graphics? measureGraphics;
-
-    static Graphics MeasureGraphics
-    {
-        get
-        {
-            if (measureGraphics == null)
-            {
-                measureGraphics = Graphics.FromHwnd(IntPtr.Zero);
-                measureGraphics.TextRenderingHint = TextRenderingHint.AntiAlias;
-            }
-            return measureGraphics;
-        }
+        var bounds = new Size(maxWidth > 0 ? maxWidth : int.MaxValue, int.MaxValue);
+        var size = TextRenderer.MeasureText(text, font, bounds,
+                                            Flags(StringAlignment.Near, StringAlignment.Near, maxWidth > 0, prefix));
+        return new Size(size.Width + 1, Math.Max(size.Height, font.Height));
     }
 
     /// <summary>A rounded rectangle path.</summary>
