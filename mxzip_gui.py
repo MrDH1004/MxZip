@@ -2085,6 +2085,52 @@ def _release_mutex(h):
         ctypes.WinDLL("kernel32").CloseHandle(ctypes.c_void_p(h))
 
 
+def _raise_own_window(titles) -> bool:
+    """Bring a visible top-level window with one of these titles, owned by a process running this same
+    executable (MxZip.exe, or python.exe from source), to the front. True if one was found."""
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    me = os.path.normcase(os.path.abspath(sys.executable))
+    found = []
+
+    def exe_of(pid) -> str:
+        h = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(32768)
+            size = wintypes.DWORD(len(buf))
+            ok = kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size))
+            return os.path.normcase(buf.value) if ok else ""
+        finally:
+            kernel32.CloseHandle(h)
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(hwnd, _):
+        if user32.IsWindowVisible(hwnd):
+            n = user32.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(n + 1)
+            user32.GetWindowTextW(hwnd, buf, n + 1)
+            if buf.value in titles:
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value != os.getpid() and exe_of(pid.value) == me:
+                    found.append(hwnd)
+                    return False
+        return True
+
+    user32.EnumWindows(visit, 0)
+    if not found:
+        return False
+    if user32.IsIconic(found[0]):
+        user32.ShowWindow(found[0], 9)  # SW_RESTORE
+    user32.SetForegroundWindow(found[0])
+    return True
+
+
 def gather_paths(verb: str, paths: list[str], first_wait_ms: int = 1500, quiet_ms: int = 1000,
                  max_ms: int = 10000):
     """Explorer starts one process per selected item for a "%1" verb. The first process becomes the collector:
@@ -2223,10 +2269,20 @@ def main():
             log_exception(e)
             return 1
         return 0
+    settings_lock = None
+    if args[:1] == ["--settings"]:  # one 환경설정 window: another click brings the open one to the front
+        import getpass
+        settings_lock = _claim_mutex(f"MxZip-settings-{getpass.getuser()}")
+        if settings_lock is None:
+            _raise_own_window(("환경설정", "Preferences"))
+            return 0
     app = _app()
     win = Main()
     if args[:1] == ["--settings"]:  # the WinForms viewer's 환경설정 button: the settings dialog only
-        win.preferences(args[1] if len(args) > 1 else None)
+        try:
+            win.preferences(args[1] if len(args) > 1 else None)
+        finally:
+            _release_mutex(settings_lock)
         return 0
     if args[:1] == ["--updated"]:
         from version import __version__
